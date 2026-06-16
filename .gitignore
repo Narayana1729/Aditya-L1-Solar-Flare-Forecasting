@@ -1,0 +1,11 @@
+# Data files
+data/raw/
+data/processed/
+
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# OS metadata
+.DS_Store
