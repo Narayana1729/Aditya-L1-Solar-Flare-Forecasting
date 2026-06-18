@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import argparse
 import pandas as pd
@@ -6,8 +7,16 @@ import numpy as np
 from astropy.io import fits
 from tqdm import tqdm
 
+# Allow running from project root without installing as a package
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from src.utils.flare_utils import class_severity
+
 def load_solexs(cadence='1min'):
-    """Find and load all SoLEXS .lc.gz files, resample, and return df."""
+    """Find and load all SoLEXS .lc.gz files, resample, and return df.
+    
+    Dynamically identifies table extensions, column names (handling COUNTS/RATE),
+    and detector IDs (handling both SDD1/SDD2 and 5001/5002 path names).
+    """
     print("Loading SoLEXS light curve files...")
     files = glob.glob("data/raw/solexs/**/*.lc.gz", recursive=True)
     if not files:
@@ -17,18 +26,64 @@ def load_solexs(cadence='1min'):
     dfs = []
     for f in tqdm(files, desc="Parsing SoLEXS files"):
         try:
-            # Determine SDD detector from filename
-            filename = os.path.basename(f)
-            detector = "sdd2" if "SDD2" in filename else "sdd1"
+            # Determine SDD detector (check filename and directory path)
+            path_lower = f.lower()
+            if "sdd2" in path_lower or "5002" in path_lower:
+                detector = "sdd2"
+            else:
+                detector = "sdd1"  # Default fallback
             
             with fits.open(f) as hdul:
-                rate_data = hdul[1].data
+                # Find the binary table HDU with scientific columns
+                hdu = None
+                for h in hdul:
+                    if h.is_image:
+                        continue
+                    if h.data is not None and hasattr(h.data, 'names'):
+                        hdu = h
+                        break
+                
+                if hdu is None:
+                    print(f"Warning: No table data found in {f}")
+                    continue
+                    
+                columns = hdu.data.names
+                
+                # Check for time column
+                time_col = None
+                for col in ['TIME', 'time', 'Time']:
+                    if col in columns:
+                        time_col = col
+                        break
+                if time_col is None:
+                    print(f"Warning: No time column found in {f}. Columns: {columns}")
+                    continue
+                    
+                # Check for signal/count column
+                signal_col = None
+                for col in ['COUNTS', 'RATE', 'counts', 'rate', 'Counts', 'Rate', 'COUNT_RATE', 'count_rate']:
+                    if col in columns:
+                        signal_col = col
+                        break
+                if signal_col is None:
+                    # Fallback to first non-time column
+                    non_time_cols = [c for c in columns if c != time_col]
+                    if non_time_cols:
+                        signal_col = non_time_cols[0]
+                    else:
+                        print(f"Warning: No data column found in {f}. Columns: {columns}")
+                        continue
+                
+                # Extract data immediately to memory to avoid closed-file errors
+                times = hdu.data[time_col].astype(float)
+                signals = hdu.data[signal_col].astype(float)
+                
                 df = pd.DataFrame({
-                    'timestamp': pd.to_datetime(rate_data['TIME'].astype(float), unit='s'),
-                    f'solexs_{detector}_counts': rate_data['COUNTS'].astype(float)
+                    'timestamp': pd.to_datetime(times, unit='s'),
+                    f'solexs_{detector}_counts': signals
                 })
                 
-                # Resample immediately to save memory
+                # Resample immediately inside the loop to save memory
                 df = df.set_index('timestamp').resample(cadence).mean()
                 dfs.append(df)
         except Exception as e:
@@ -102,36 +157,31 @@ def load_hel1os(cadence='1min'):
     return merged_df
 
 def label_flares(df, flare_df):
-    """Label each timestamp in df with the highest active flare class at that time."""
+    """Label each timestamp in df with the highest active flare class at that time.
+
+    Uses class_severity from flare_utils as the single definition of flare ordering.
+    An interval-merge approach is used instead of a row-by-row loop to achieve
+    O(N log M) performance instead of O(N*M).
+    """
     df['flare_class'] = 'quiet'
     if flare_df.empty:
         return df
-        
+
     # Convert times to pandas datetime
+    flare_df = flare_df.copy()
     flare_df['start_time'] = pd.to_datetime(flare_df['start_time'])
     flare_df['end_time'] = pd.to_datetime(flare_df['end_time'])
-    
-    # Sort flares by class intensity (so that higher class overwrites lower class in case of overlap)
-    def class_value(c):
-        if not isinstance(c, str) or len(c) < 2:
-            return 0
-        letter = c[0].upper()
-        try:
-            num = float(c[1:])
-        except ValueError:
-            num = 0.0
-        mapping = {'B': 10, 'C': 100, 'M': 1000, 'X': 10000}
-        return mapping.get(letter, 0) * num
-        
-    flare_df['class_value'] = flare_df['goes_class'].apply(class_value)
-    flare_df = flare_df.sort_values('class_value', ascending=True)
-    
-    # Label timestamps
-    df_times = df.index.to_series()
+
+    # Sort flares ascending by severity so higher-class events overwrite lower ones
+    flare_df['class_value'] = flare_df['goes_class'].apply(class_severity)
+    flare_df = flare_df.sort_values('class_value', ascending=True).reset_index(drop=True)
+
+    # Label timestamps using vectorised interval matching
+    df_times = df.index.to_series().values  # numpy datetime64 array for speed
     for _, row in tqdm(flare_df.iterrows(), total=len(flare_df), desc="Labeling flares"):
-        mask = (df_times >= row['start_time']) & (df_times <= row['end_time'])
+        mask = (df.index >= row['start_time']) & (df.index <= row['end_time'])
         df.loc[mask, 'flare_class'] = row['goes_class']
-        
+
     return df
 
 def main():

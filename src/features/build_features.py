@@ -22,8 +22,14 @@ def main():
     df = df.sort_values('timestamp')
     df = df.set_index('timestamp')
     
-    # Identify numeric columns (excluding timestamp and flare_class)
-    numeric_cols = [col for col in df.columns if col != 'flare_class' and df[col].dtype in [np.float64, np.int64]]
+    # Normalise flare_class: fill NaNs so downstream str operations are safe
+    df['flare_class'] = df['flare_class'].fillna('quiet').astype(str)
+    
+    # Identify numeric columns (excluding flare_class)
+    numeric_cols = [
+        col for col in df.columns
+        if col != 'flare_class' and pd.api.types.is_numeric_dtype(df[col])
+    ]
     print(f"\nFound {len(numeric_cols)} numeric instrument columns to process:")
     for col in numeric_cols[:10]:
         print(f"  - {col}")
@@ -54,10 +60,20 @@ def main():
             df[f"{col}_roll_mean_{w}m"] = df[col].rolling(window=w, min_periods=1).mean()
             df[f"{col}_roll_std_{w}m"] = df[col].rolling(window=w, min_periods=1).std().fillna(0.0)
             
-    # 4. Handle any NaNs introduced by shift/lag features by backward filling
-    # (Since these are initial boundary records, bfill is safe and preserves row count)
-    print("\nHandling missing values...")
-    df = df.bfill()
+    # 4. Handle NaNs introduced by shift/lag features.
+    #
+    # FIX (was bfill): bfill fills early lag-NaN rows with *future* values,
+    # introducing look-ahead bias into the first max(lag_intervals)=30 rows.
+    # ffill is safe because it only propagates past-observed values forward.
+    # After ffill, the very first rows (before any valid observation) are
+    # dropped with dropna() to remove any residual boundary NaNs.
+    print("\nHandling missing values (forward-fill, then drop leading NaNs)...")
+    df = df.ffill()
+    rows_before = len(df)
+    df = df.dropna()
+    rows_dropped = rows_before - len(df)
+    if rows_dropped > 0:
+        print(f"  Dropped {rows_dropped} leading rows with no valid prior observation.")
     
     # Save feature matrix
     output_path = "data/processed/features.csv"
