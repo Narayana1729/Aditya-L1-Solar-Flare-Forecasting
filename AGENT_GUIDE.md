@@ -19,7 +19,7 @@ graph TD
     E -->|ensemble_forecast.py| F[TSS/HSS Score Evaluation]
     E & D -->|create_dashboard_data.py| G[Simulation Dataset: dashboard_data.csv]
     G -->|FastAPI server: backend/main.py| H[Live Stream API Endpoint]
-    H -->|React Dashboard: dashboard/src/App.jsx| I[Visual Telemetry Alert UI]
+    H -->|Next.js Dashboard: dashboard/app/page.tsx| I[Visual Telemetry Alert UI]
 ```
 
 *   **Raw Data Path**: [data/raw/](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/data/raw) (CDF files for HEL1OS, zipped FITS for SoLEXS).
@@ -64,7 +64,7 @@ We have created an independent sandbox directory under `workspace/` for each tea
 *   **Core Tasks**: FastAPI routing, thread-safe simulation playback, Recharts visualizer configs, alert triggers, and tab components.
 *   **Pipeline Files to Reference**:
     *   [main.py](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/backend/main.py) (FastAPI uvicorn routing).
-    *   [App.jsx](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/dashboard/src/App.jsx) (React + Vite visual frontend).
+    *   [page.tsx](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/dashboard/app/page.tsx) (Next.js Dashboard visual frontend).
 
 ---
 

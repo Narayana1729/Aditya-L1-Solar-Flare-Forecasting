@@ -5,7 +5,9 @@ import pandas as pd
 import requests
 from tqdm import tqdm
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 from sunpy.net import Fido
+# pyrefly: ignore [missing-import]
 from sunpy.net import attrs as a
 
 def main():

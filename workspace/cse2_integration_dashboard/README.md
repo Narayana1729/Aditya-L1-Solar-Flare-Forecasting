@@ -13,5 +13,5 @@ Welcome to your independent workspace! You can write and test your FastAPI endpo
 
 ## Reference Code in Main Pipeline
 *   [main.py](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/backend/main.py)
-*   [App.jsx](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/dashboard/src/App.jsx)
+*   [page.tsx](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/dashboard/app/page.tsx)
 *   [create_dashboard_data.py](file:///Users/srimannarayanadeevi/Aditya-L1%20Solar%20Flare%20Forecasting/src/data/create_dashboard_data.py)

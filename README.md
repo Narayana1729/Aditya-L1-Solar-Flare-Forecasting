@@ -11,7 +11,8 @@ The system integrates data from the **SoLEXS (Solar Low Energy X-ray Spectromete
 ```
 Aditya-L1 Solar Flare Forecasting/
 ├── backend/            ← FastAPI server (serves simulation and metrics)
-├── dashboard/          ← React + Vite frontend (visual telemetry)
+├── dashboard/          ← Next.js + v0 dashboard app (visual telemetry, port 3001)
+├── landing-page/       ← Next.js + v0 landing page (portal homepage, port 3000)
 ├── data/
 │   ├── raw/            ← SoLEXS, HEL1OS, and GOES catalogs
 │   └── processed/      ← Fused datasets, model checkpoints, and evaluation metrics
@@ -22,6 +23,7 @@ Aditya-L1 Solar Flare Forecasting/
 │   └── utils/          ← Single source-of-truth utility for heliophysics metrics
 ├── Makefile            ← Pipeline orchestrator
 └── requirements.txt    ← Pinned Python dependencies
+
 ```
 
 ---
@@ -49,9 +51,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Dashboard Environment:**
+**Frontend Environment:**
 ```bash
+# Setup dashboard
 cd dashboard
+npm install
+
+# Setup landing page
+cd ../landing-page
 npm install
 cd ..
 ```
@@ -109,17 +116,24 @@ make backend
 ```
 The server will run at `http://localhost:8000`.
 
-### 2. Start the React Frontend Dashboard
+### 2. Start the Frontend Applications
+**Landing Page (Port 3000):**
 ```bash
-make frontend
+cd landing-page
+npm run dev
 ```
-The development server will run at `http://localhost:5173`. Open your browser to view the interactive dashboard.
+**Dashboard App (Port 3001):**
+```bash
+cd dashboard
+npm run dev
+```
 
 > [!NOTE]
 > You can orchestrate the entire machine learning pipeline end-to-end (Steps 1–5) in one command using:
 > ```bash
 > make all
 > ```
+
 
 ---
 
