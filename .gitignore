@@ -24,15 +24,16 @@ __pycache__/
 **/pnpm-lock.yaml
 
 # Data, Features, and Checkpoints
-goes_data/*
-!goes_data/metrics/
-features/
-logs/
-models/
-results/
-scratch/
+/goes_data/*
+!/goes_data/metrics/
+/features/
+/logs/
+/models/
+/results/
+/scratch/
 **/*.csv
 **/*.pt
 **/*.pkl
+
 
 

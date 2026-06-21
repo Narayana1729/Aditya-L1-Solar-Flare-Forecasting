@@ -14,8 +14,42 @@ from sklearn.metrics import classification_report, confusion_matrix, precision_r
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.utils.flare_utils import make_is_flare, make_target, tss_score, hss_score
 
-# Import the model architecture
-from train_lstm import SolarFlareDataset, SolarFlareLSTM
+# Define the custom Dataset locally for compatibility
+class SolarFlareDataset(Dataset):
+    def __init__(self, X, y, lookback=30):
+        self.X = torch.tensor(X, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.float32)
+        self.lookback = lookback
+
+    def __len__(self):
+        return len(self.X) - self.lookback
+
+    def __getitem__(self, idx):
+        x_window = self.X[idx : idx + self.lookback]
+        y_label = self.y[idx + self.lookback]
+        return x_window, y_label
+
+# Define the PyTorch LSTM architecture exactly as saved in lstm_model.pt
+class SolarFlareLSTM(nn.Module):
+    def __init__(self, input_dim, hidden_dim=64, num_layers=2, dropout=0.2):
+        super(SolarFlareLSTM, self).__init__()
+        self.lstm = nn.LSTM(
+            input_dim,
+            hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0
+        )
+        self.fc = nn.Linear(hidden_dim, 1)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        out, _ = self.lstm(x)
+        out = out[:, -1, :]
+        out = self.dropout(out)
+        logits = self.fc(out)
+        return logits.squeeze(-1)
+
 
 
 def load_data_and_predict(input_path, model_path, scaler_path, lookback=30, forecast_horizon=30):
