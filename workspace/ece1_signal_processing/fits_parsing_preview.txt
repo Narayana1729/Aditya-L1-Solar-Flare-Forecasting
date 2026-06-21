@@ -1,0 +1,26 @@
+FITS PARSING PREVIEW REPORT
+===========================
+
+File analyzed: data/raw/solexs/AL1_SLX_L1_20240701_v1.1/AL1_SLX_L1_20240701_v1.1/SDD2/AL1_SOLEXS_20240701_SDD2_L1.lc.gz
+Observer: N/A
+Instrument: SoLEXS
+Detector: N/A
+Target: N/A
+Date Observed: 2024-07-01 05:30:00
+Date Ended: 2024-07-02 05:29:59
+Science HDU name: RATE
+Time column used: TIME
+Counts column used: COUNTS
+
+First 10 rows of parsed DataFrame:
+          timestamp  solexs_counts
+2024-07-01 00:00:00           31.0
+2024-07-01 00:00:01           34.0
+2024-07-01 00:00:02           33.0
+2024-07-01 00:00:03           42.0
+2024-07-01 00:00:04           47.0
+2024-07-01 00:00:05            NaN
+2024-07-01 00:00:06            NaN
+2024-07-01 00:00:07            NaN
+2024-07-01 00:00:08            NaN
+2024-07-01 00:00:09            NaN

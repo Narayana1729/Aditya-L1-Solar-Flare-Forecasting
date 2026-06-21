@@ -10,8 +10,8 @@ install:
 		echo "Installing Python packages with pip..."; \
 		$(PYTHON) -m pip install -r requirements.txt || pip install -r requirements.txt; \
 	fi
-	@echo "Installing frontend npm packages..."
-	cd dashboard && npm install
+	@echo "Installing Next.js frontend npm packages..."
+	cd Iris-x/Iris && npm install
 
 data:
 	$(PYTHON) src/data/ingest_data.py
@@ -34,6 +34,6 @@ backend:
 	$(PYTHON) backend/main.py
 
 frontend:
-	cd dashboard && npm run dev
+	cd Iris-x/Iris && npm run dev
 
 all: data features train evaluate dashboard-data

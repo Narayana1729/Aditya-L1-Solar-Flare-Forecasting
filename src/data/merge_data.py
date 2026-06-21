@@ -176,10 +176,14 @@ def label_flares(df, flare_df):
     flare_df['class_value'] = flare_df['goes_class'].apply(class_severity)
     flare_df = flare_df.sort_values('class_value', ascending=True).reset_index(drop=True)
 
-    # Label timestamps using vectorised interval matching
-    df_times = df.index.to_series().values  # numpy datetime64 array for speed
+    # Label timestamps using vectorised interval matching (with 5s L1-to-Earth time-of-flight offset correction)
+    # Aditya-L1 is at the Lagrangian L1 point (~1.5 million km from Earth toward the Sun).
+    # Solar photons reach Aditya-L1 ~5 seconds before they reach Earth/GOES.
+    # Therefore, Aditya-L1 time = Earth/GOES time - 5 seconds.
     for _, row in tqdm(flare_df.iterrows(), total=len(flare_df), desc="Labeling flares"):
-        mask = (df.index >= row['start_time']) & (df.index <= row['end_time'])
+        start_aditya = row['start_time'] - pd.Timedelta(seconds=5)
+        end_aditya = row['end_time'] - pd.Timedelta(seconds=5)
+        mask = (df.index >= start_aditya) & (df.index <= end_aditya)
         df.loc[mask, 'flare_class'] = row['goes_class']
 
     return df

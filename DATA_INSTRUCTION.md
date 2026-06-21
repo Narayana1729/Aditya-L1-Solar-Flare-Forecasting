@@ -6,9 +6,16 @@ This guide helps you retrieve the necessary Level-1 data files from the ISRO ISS
 
 ## Step 1: Download from PRADAN Portal
 
+> [!NOTE]
+> **PRADAN Portal Access Status:** Full team access has been verified and confirmed under the core project group credentials. If you need individual access or credentials reset, contact the team Lead.
+> 
+> **Kaggle Mirror Fallback:** In the event of PRADAN portal downtime, slow download speeds, or credential authorization delays, you can bypass the portal entirely and download the raw dataset (SoLEXS `.lc.gz` and HEL1OS `.fits` files) directly from the verified Kaggle mirror:
+> **Kaggle Mirror Coordinates:** `narayana1729/aditya-l1-solar-flare-raw-mirror`
+> **Kaggle Link:** [Aditya-L1 Solar Flare Raw Data Mirror (Kaggle)](https://www.kaggle.com/datasets/narayana1729/aditya-l1-solar-flare-raw-mirror)
+
 1. Open your browser and go to the official ISRO ISSDC PRADAN portal:
    [https://pradan.issdc.gov.in/al1](https://pradan.issdc.gov.in/al1)
-2. Log in using your approved credentials.
+2. Log in using your approved credentials (or use the Kaggle mirror fallback).
 3. Search for data products within your period of interest (we recommend matches to GOES flares from **July 2024 onwards**, such as the active solar flare period in **July 2024** or **October 2024**):
    - **SoLEXS (Solar Low Energy X-ray Spectrometer):** Look for Level-1 data files (`.cdf`).
    - **HEL1OS (High Energy L1 Orbiting X-ray Spectrometer):** Look for Level-1 data files (`.cdf` or `.fits` event/lightcurve data).
