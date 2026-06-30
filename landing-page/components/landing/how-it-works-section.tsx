@@ -96,6 +96,47 @@ export function HowItWorksSection() {
           </div>
         </div>
 
+        {/* Earth Engine style Visual Equation */}
+        <div className="my-12 bg-[#0A0E17]/60 border border-white/5 rounded-xl p-6 lg:p-8 shadow-xl">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-4 font-mono text-xs">
+            
+            {/* Card 1 */}
+            <div className="flex-1 text-center lg:text-left space-y-2 p-5 bg-[#121824] rounded-lg border border-white/5 w-full">
+              <span className="text-2xl block mb-1">🛰️</span>
+              <h4 className="font-bold text-[#EDEFF2] text-sm">Telemetry Ingestion</h4>
+              <p className="text-white/50 text-[11px] leading-snug">Raw Soft/Hard X-ray time-series from SoLEXS & HEL1OS</p>
+            </div>
+            
+            <div className="text-2xl font-bold text-white/10 select-none shrink-0">+</div>
+            
+            {/* Card 2 */}
+            <div className="flex-1 text-center lg:text-left space-y-2 p-5 bg-[#121824] rounded-lg border border-white/5 w-full">
+              <span className="text-2xl block mb-1">🧠</span>
+              <h4 className="font-bold text-[#EDEFF2] text-sm">Ensemble Models</h4>
+              <p className="text-white/50 text-[11px] leading-snug">Stacking LSTM forecasting & LightGBM meta-classification</p>
+            </div>
+            
+            <div className="text-2xl font-bold text-white/10 select-none shrink-0">+</div>
+            
+            {/* Card 3 */}
+            <div className="flex-1 text-center lg:text-left space-y-2 p-5 bg-[#121824] rounded-lg border border-white/5 w-full">
+              <span className="text-2xl block mb-1">🔍</span>
+              <h4 className="font-bold text-[#EDEFF2] text-sm">Explainable AI</h4>
+              <p className="text-white/50 text-[11px] leading-snug">Operator SHAP attributions explaining active alerts</p>
+            </div>
+            
+            <div className="text-2xl font-bold text-[#FF5C28]/35 select-none shrink-0">=</div>
+            
+            {/* Result Card */}
+            <div className="flex-1 text-center lg:text-left space-y-2 p-5 bg-[#FF5C28]/10 rounded-lg border border-[#FF5C28]/30 w-full shadow-[0_0_15px_rgba(255,92,40,0.05)]">
+              <span className="text-2xl block mb-1">🔥</span>
+              <h4 className="font-bold text-[#FF5C28] text-sm">Solar Flare Intel</h4>
+              <p className="text-white/80 text-[11px] font-semibold leading-snug">Real-time Solar Storm Forecasts</p>
+            </div>
+
+          </div>
+        </div>
+
         {/* Horizontal Steps Layout */}
         <div className="grid lg:grid-cols-4 gap-4 mt-6 lg:mt-8">
           {steps.map((step, index) => (
