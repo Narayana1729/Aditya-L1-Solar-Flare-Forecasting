@@ -259,8 +259,8 @@ export function MetricsSection() {
         <div className="grid lg:grid-cols-12 gap-8 mb-20 lg:mb-32">
           <div className="lg:col-span-8 lg:col-start-1">
             <div className="flex items-center gap-4 mb-6">
-              <span className="flex items-center gap-2 px-3 py-1 bg-[#FF6B00]/10 text-[#FF6B00] text-xs font-mono">
-                <span className="w-2 h-2 rounded-full bg-[#FF6B00] animate-pulse" />
+              <span className="flex items-center gap-2 px-3 py-1 bg-[#FF5C28]/10 text-[#FF5C28] text-xs font-mono">
+                <span className="w-2 h-2 rounded-full bg-[#FF5C28] animate-pulse" />
                 LIVE PIPELINE
               </span>
               <span className="text-sm font-mono text-muted-foreground">

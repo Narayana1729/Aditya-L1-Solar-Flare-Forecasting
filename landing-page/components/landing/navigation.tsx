@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Menu, X, Sun, Moon } from "lucide-react";
 
 const navLinks = [
-  { name: "Instruments", href: "/#infra"          },
-  { name: "Metrics",     href: "/#metrics"        },
   { name: "Pipeline",    href: "/#how-it-works"  },
-  { name: "Reliability", href: "/#reliability"    },
-  { name: "Team",        href: "/#features"       },
+  { name: "Datasets",    href: "/#infra"         },
+  { name: "Metrics",     href: "/#metrics"       },
+  { name: "Team",        href: "/#team"          },
+  { name: "FAQ",         href: "/#faq"           },
 ];
 
 export function Navigation() {

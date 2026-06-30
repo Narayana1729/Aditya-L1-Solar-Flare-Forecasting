@@ -5,27 +5,27 @@ import { useEffect, useRef, useState } from "react";
 const steps = [
   {
     number: "01",
-    title: "Data Ingestion",
-    subtitle: "Telemetry Data",
-    description: "SoLEXS soft X-ray and HEL1OS hard X-ray light curves from Aditya-L1, covering July 2024 to July 2026, ~1M+ rows.",
+    title: "LSTM Forecasting",
+    subtitle: "Deep Sequence Model",
+    description: "Deep LSTM networks process the past 60 minutes of soft and hard X-ray flux to generate future flare probabilities across 15m, 30m, and 60m horizons.",
   },
   {
     number: "02",
-    title: "Feature Engineering",
-    subtitle: "Signal Processing",
-    description: "Rolling statistics, flux derivatives, peak detection, flare class labeling A B C M X.",
+    title: "LightGBM Stacking",
+    subtitle: "Ensemble Meta-Learner",
+    description: "A gradient-boosted meta-classifier aggregates primary predictions, rolling derivatives, and baseline statistics to optimize decision thresholds.",
   },
   {
     number: "03",
-    title: "Model Training",
-    subtitle: "Predictive Modeling",
-    description: "Random Forest and XGBoost for nowcasting C1, LSTM for short-term forecasting C2 and C3.",
+    title: "Isolation Forest",
+    subtitle: "Outlier & Anomaly Filter",
+    description: "An unsupervised Isolation Forest flags instrumentation outliers and telemetry glitches, pruning false positives before alarms trigger.",
   },
   {
     number: "04",
-    title: "Stacking & SHAP",
-    subtitle: "Explainable Ensemble",
-    description: "Meta-learner combines all base models, SHAP values explain which features drive each prediction.",
+    title: "SHAP Explanations",
+    subtitle: "Operator Explainability",
+    description: "TreeExplainer calculates SHAP attribution values in real-time, showing operators exactly which features caused the model to alert.",
   },
 ];
 
@@ -57,9 +57,9 @@ export function HowItWorksSection() {
     <section
       id="how-it-works"
       ref={sectionRef}
-      className="relative py-24 lg:py-32 bg-card text-foreground overflow-hidden"
+      className="relative py-24 lg:py-32 bg-[#121824] text-[#EDEFF2] overflow-hidden"
     >
-      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-foreground/[0.01] blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-[#FF5C28]/[0.01] blur-[100px] pointer-events-none" />
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
         {/* Header — titre + image cerisier */}
@@ -67,18 +67,17 @@ export function HowItWorksSection() {
           {/* Titre colonne gauche */}
           <div className="overflow-hidden pb-0 lg:pb-32">
             <div className={`transition-all duration-1000 ${isVisible ? "translate-x-0 opacity-100" : "-translate-x-12 opacity-0"}`}>
-              <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground/60 mb-8">
+              <span className="inline-flex items-center gap-3 text-sm font-mono text-[#5EE6D0] mb-8">
                 <span className="w-12 h-px bg-border" />
-                Pipeline
+                Meet the Pipeline
               </span>
             </div>
             
-            <h2 className={`text-6xl md:text-7xl lg:text-[128px] font-display tracking-tight leading-[0.85] transition-all duration-1000 delay-100 ${
+            <h2 className={`text-6xl md:text-7xl lg:text-[100px] font-display tracking-tight leading-[0.85] transition-all duration-1000 delay-100 ${
               isVisible ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
             }`}>
-              <span className="block">Ingest.</span>
-              <span className="block text-muted-foreground/45">Process.</span>
-              <span className="block text-muted-foreground/15">Predict.</span>
+              <span className="block">Four-stage</span>
+              <span className="block text-[#FF5C28]">Architecture.</span>
             </h2>
           </div>
 
@@ -93,7 +92,7 @@ export function HowItWorksSection() {
               className="absolute bottom-0 left-0 w-full h-full object-contain object-bottom"
             />
             {/* Fade sur le bord gauche */}
-            <div className="absolute inset-0 bg-gradient-to-r from-card via-transparent to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#121824] via-transparent to-transparent pointer-events-none" />
           </div>
         </div>
 
@@ -104,43 +103,43 @@ export function HowItWorksSection() {
               key={step.number}
               type="button"
               onClick={() => setActiveStep(index)}
-              className={`relative text-left p-8 lg:p-12 border transition-all duration-500 ${
+              className={`relative text-left p-8 lg:p-12 border transition-all duration-500 rounded-lg ${
                 activeStep === index 
-                  ? "bg-background border-[#FF6B00]" 
-                  : "bg-background border-border hover:border-[#FF6B00]/40"
+                  ? "bg-[#0A0E17] border-[#FF5C28]" 
+                  : "bg-[#0A0E17]/40 border-white/5 hover:border-[#FF5C28]/40"
               }`}
             >
               {/* Step number with animated line */}
-              <div className="flex items-center gap-4 mb-8">
+              <div className="flex items-center gap-4 mb-8 font-mono">
                 <span className={`text-4xl font-display transition-colors duration-300 ${
-                  activeStep === index ? "text-[#FF6B00]" : "text-muted-foreground/30"
+                  activeStep === index ? "text-[#FF5C28]" : "text-[#EDEFF2]/20"
                 }`}>
                   {step.number}
                 </span>
-                <div className="flex-1 h-px bg-border overflow-hidden">
+                <div className="flex-1 h-px bg-white/10 overflow-hidden">
                   {activeStep === index && (
-                    <div className="h-full bg-[#FF6B00]/50 animate-progress" />
+                    <div className="h-full bg-[#FF5C28]/50 animate-progress" />
                   )}
                 </div>
               </div>
 
               {/* Title */}
-              <h3 className="text-3xl lg:text-4xl font-display mb-2">
+              <h3 className="text-3xl lg:text-3xl font-display mb-2 text-[#EDEFF2] tracking-tight">
                 {step.title}
               </h3>
-              <span className="text-xl text-muted-foreground font-display block mb-6">
+              <span className="text-sm font-mono text-[#FFB627] block mb-6 uppercase tracking-wider">
                 {step.subtitle}
               </span>
 
               {/* Description */}
-              <p className={`text-muted-foreground leading-relaxed transition-opacity duration-300 ${
+              <p className={`text-sm leading-relaxed transition-opacity duration-300 text-[#EDEFF2]/70 ${
                 activeStep === index ? "opacity-100" : "opacity-60"
               }`}>
                 {step.description}
               </p>
 
               {/* Active indicator */}
-              <div className={`absolute bottom-0 left-0 right-0 h-1 bg-[#FF6B00] transition-transform duration-500 origin-left ${
+              <div className={`absolute bottom-0 left-0 right-0 h-1 bg-[#FF5C28] transition-transform duration-500 origin-left ${
                 activeStep === index ? "scale-x-100" : "scale-x-0"
               }`} />
             </button>

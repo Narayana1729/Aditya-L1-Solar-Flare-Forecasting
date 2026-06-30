@@ -30,10 +30,10 @@ export function CtaSection() {
   };
 
   return (
-    <section id="cta" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
+    <section id="cta" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden bg-[#0A0E17]">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         <div
-          className={`relative border border-foreground transition-all duration-1000 ${
+          className={`relative border border-white/10 bg-[#121824]/40 rounded-2xl overflow-hidden transition-all duration-1000 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           onMouseMove={handleMouseMove}
@@ -42,7 +42,7 @@ export function CtaSection() {
           <div 
             className="absolute inset-0 opacity-15 pointer-events-none transition-opacity duration-300"
             style={{
-              background: `radial-gradient(600px circle at ${mousePosition.x}% ${mousePosition.y}%, var(--accent), transparent 40%)`
+              background: `radial-gradient(600px circle at ${mousePosition.x}% ${mousePosition.y}%, #5EE6D0, transparent 40%)`
             }}
           />
           
@@ -50,25 +50,24 @@ export function CtaSection() {
             <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
               {/* Left content */}
               <div className="flex-1">
-                <h2 className="text-6xl md:text-7xl lg:text-[72px] font-display tracking-tight mb-8 leading-[0.95]">
+                <h2 className="text-6xl md:text-7xl lg:text-[72px] font-display tracking-tight mb-8 leading-[0.95] text-[#EDEFF2]">
                   Explore the
                   <br />
-                  flare pipeline.
+                  <span className="text-[#FF5C28]">Pipeline.</span>
                 </h2>
 
-                <p className="text-xl text-muted-foreground mb-12 leading-relaxed max-w-xl">
-                  A real-time solar flare forecasting pipeline built on Aditya-L1 SoLEXS + HEL1OS telemetry. 
-                  TSS-optimised ensemble models, live alert thresholds, and SHAP explainability.
+                <p className="text-xl text-white/60 mb-12 leading-relaxed max-w-xl font-sans">
+                  Review our complete codebase, telemetry ingestion sandbox, and ensemble model forecasting modules on GitHub, or access our official BAH Idea Submission template.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-start gap-4">
                   <Button
                     asChild
                     size="lg"
-                    className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
+                    className="bg-[#FF5C28] hover:bg-[#FF5C28]/95 text-white px-8 h-14 text-base rounded-full group border-none"
                   >
-                    <a href="#metrics">
-                      View live forecasts
+                    <a href="https://github.com/Narayana1729/Aditya-L1-Solar-Flare-Forecasting" target="_blank" rel="noopener noreferrer">
+                      GitHub Repository
                       <ArrowRight className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" />
                     </a>
                   </Button>
@@ -76,15 +75,15 @@ export function CtaSection() {
                     asChild
                     size="lg"
                     variant="outline"
-                    className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
+                    className="h-14 px-8 text-base rounded-full border-white/10 hover:bg-white/5 text-[#EDEFF2]"
                   >
-                    <a href="/dashboard">
-                      Explore the dashboard
+                    <a href="/[Pub] ISRO BAH 2026 _ Idea Submission Template _ Backup.pptx" download>
+                      BAH Submission Template
                     </a>
                   </Button>
                 </div>
 
-                <p className="text-sm text-muted-foreground mt-8 font-mono">
+                <p className="text-sm text-white/30 mt-8 font-mono">
                   BAH 2026 · Problem Statement 15 · Team IRIS X
                 </p>
               </div>
@@ -94,15 +93,15 @@ export function CtaSection() {
                 <img
                   src="/images/bridge.png"
                   alt="Two trees connected by glowing arcs"
-                  className="w-full h-full object-contain object-bottom"
+                  className="w-full h-full object-contain object-bottom opacity-80"
                 />
               </div>
             </div>
           </div>
 
           {/* Decorative corner */}
-          <div className="absolute top-0 right-0 w-32 h-32 border-b border-l border-foreground/10" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 border-t border-r border-foreground/10" />
+          <div className="absolute top-0 right-0 w-32 h-32 border-b border-l border-white/5" />
+          <div className="absolute bottom-0 left-0 w-32 h-32 border-t border-r border-white/5" />
         </div>
       </div>
     </section>

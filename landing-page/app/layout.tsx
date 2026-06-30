@@ -1,18 +1,17 @@
 import React from "react"
 import type { Metadata } from 'next'
-import { Instrument_Sans, Instrument_Serif, JetBrains_Mono } from 'next/font/google'
+import { Inter, Space_Grotesk, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from "@/components/theme-provider"
 
-const instrumentSans = Instrument_Sans({ 
+const inter = Inter({ 
   subsets: ["latin"],
-  variable: '--font-instrument'
+  variable: '--font-inter'
 });
 
-const instrumentSerif = Instrument_Serif({ 
+const spaceGrotesk = Space_Grotesk({ 
   subsets: ["latin"],
-  weight: "400",
-  variable: '--font-instrument-serif'
+  variable: '--font-space-grotesk'
 });
 
 const jetbrainsMono = JetBrains_Mono({ 
@@ -33,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
