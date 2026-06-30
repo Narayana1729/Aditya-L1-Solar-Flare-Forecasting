@@ -10,8 +10,10 @@ install:
 		echo "Installing Python packages with pip..."; \
 		$(PYTHON) -m pip install -r requirements.txt || pip install -r requirements.txt; \
 	fi
-	@echo "Installing Next.js frontend npm packages..."
-	cd Iris-x/Iris && npm install
+	@echo "Installing Next.js dashboard npm packages..."
+	cd dashboard && npm install
+	@echo "Installing Next.js landing-page npm packages..."
+	cd landing-page && npm install
 
 data:
 	$(PYTHON) src/data/ingest_data.py
@@ -34,6 +36,8 @@ backend:
 	$(PYTHON) backend/main.py
 
 frontend:
-	cd Iris-x/Iris && npm run dev
+	@echo "Starting Next.js dashboard (port 3001) and landing-page (port 3000)..."
+	npm run dev --prefix dashboard & npm run dev --prefix landing-page
 
 all: data features train evaluate dashboard-data
+

@@ -98,7 +98,24 @@ def main():
         'solexs_flux_accel', 
         'minutes_since_last_flare', 
         'flux_prominence_10m', 
-        'flux_prominence_30m'
+        'flux_prominence_30m',
+        'solexs_fft_dom_freq',
+        'solexs_fft_hl_ratio',
+        'solexs_fft_entropy',
+        'hel1os_fft_dom_freq',
+        'hel1os_fft_hl_ratio',
+        'hel1os_fft_entropy',
+        'solexs_wt_cA4_energy',
+        'solexs_wt_cD4_energy',
+        'solexs_wt_cD3_energy',
+        'solexs_wt_cD2_energy',
+        'solexs_wt_cD1_energy',
+        'hel1os_wt_cA4_energy',
+        'hel1os_wt_cD4_energy',
+        'hel1os_wt_cD3_energy',
+        'hel1os_wt_cD2_energy',
+        'hel1os_wt_cD1_energy',
+        'neupert_phase_lag'
     ]
 
     print("Using feature columns:")
@@ -130,9 +147,37 @@ def main():
 
     # Save LSTM scaler
     os.makedirs("./models", exist_ok=True)
+    os.makedirs("data/processed", exist_ok=True)
     scaler_path = "./models/scaler_lstm.pkl"
     joblib.dump(scaler, scaler_path)
-    print(f"Saved LSTM scaler to: {scaler_path}")
+    joblib.dump(scaler, "data/processed/scaler.pkl")
+    print(f"Saved LSTM scaler to: {scaler_path} and data/processed/scaler.pkl")
+
+    # Save feature columns to text file for the backend/other scripts to load dynamically
+    feature_cols_path = "data/processed/feature_cols.txt"
+    with open(feature_cols_path, "w") as f:
+        for col in feature_cols:
+            f.write(f"{col}\n")
+    print(f"Saved feature columns list to: {feature_cols_path}")
+
+    # Merge the 24 features into features_with_precursors.csv so downstream scripts have them
+    precursors_path = "data/processed/features_with_precursors.csv"
+    if os.path.exists(precursors_path):
+        print(f"Merging 24 features into {precursors_path}...")
+        df_precursors = pd.read_csv(precursors_path)
+        # Drop columns if they already exist in df_precursors to avoid duplicates
+        cols_to_drop = [c for c in feature_cols if c in df_precursors.columns and c != 'timestamp']
+        if cols_to_drop:
+            df_precursors = df_precursors.drop(columns=cols_to_drop)
+        
+        # Merge on timestamp
+        df_aditya['timestamp'] = pd.to_datetime(df_aditya['timestamp'])
+        df_precursors['timestamp'] = pd.to_datetime(df_precursors['timestamp'])
+        df_merged = pd.merge(df_precursors, df_aditya[['timestamp'] + [c for c in feature_cols if c != 'timestamp']], on='timestamp', how='inner')
+        df_merged.to_csv(precursors_path, index=False)
+        print(f"[SUCCESS] Updated {precursors_path} with the 24 LSTM features.")
+    else:
+        print(f"[WARNING] {precursors_path} not found. Skipping merge.")
 
     # Select device (falls back to CPU if MPS is not available or supported)
     device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
@@ -239,6 +284,10 @@ def main():
                 epochs_no_improve = 0
                 torch.save(model.state_dict(), model_save_path)
                 print(f"  --> Saved best model checkpoint to {model_save_path}")
+                if horizon_short == "30m":
+                    processed_model_path = "data/processed/lstm_model.pt"
+                    torch.save(model.state_dict(), processed_model_path)
+                    print(f"  --> Saved best 30m model directly to: {processed_model_path}")
             else:
                 epochs_no_improve += 1
                 if epochs_no_improve >= patience:

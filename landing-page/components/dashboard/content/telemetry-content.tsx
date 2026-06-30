@@ -5,7 +5,7 @@ import {
   Play, 
   Pause, 
   RotateCcw, 
-  Calendar, 
+  Calendar as CalendarIcon, 
   ShieldAlert, 
   Sliders, 
   Activity, 
@@ -24,9 +24,54 @@ import {
   Legend,
 } from "recharts";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
  
-import { API_BASE } from "@/lib/api";
- 
+const API_BASE = "http://127.0.0.1:8000";
+
+// Helper functions to prevent timezone shifts when parsing/formatting dates
+const parseLocalDate = (dateStr: string) => {
+  if (!dateStr) return undefined;
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return undefined;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; // 0-based
+  const day = parseInt(parts[2], 10);
+  return new Date(year, month, day);
+};
+
+const getLocalDateString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const playAlarmSound = (frequency: number, duration: number) => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(frequency, ctx.currentTime);
+    
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch (err) {
+    console.error("Failed to play audio alert", err);
+  }
+};
+
 export function TelemetryContent() {
   const [isRunning, setIsRunning] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1000); // ms per tick
@@ -35,7 +80,11 @@ export function TelemetryContent() {
   const [realtime, setRealtime] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [lstmWeight, setLstmWeight] = useState<number>(0.7);
+  const [threshold, setThreshold] = useState<number>(0.5);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const prevStatusRef = useRef<string>("GREEN");
+ 
+  const flareDatesSet = new Set(Object.values(groupedDates).flat());
  
   // Fetch initial setup data
   useEffect(() => {
@@ -43,6 +92,46 @@ export function TelemetryContent() {
     resetSimulation();
     fetchWeights();
   }, []);
+
+  // Trigger Web Audio and Speech Alerts when warningStatus escalates
+  useEffect(() => {
+    if (!realtime) return;
+    
+    // Determine the active alert level
+    const current = realtime.current || {};
+    const currentLstm = current.lstm_prob !== null ? current.lstm_prob : 0.0;
+    const currentPhysics = current.physics_precursor_score !== null ? current.physics_precursor_score : 0.0;
+    const liveEnsembleProb = currentLstm * lstmWeight + currentPhysics * (1.0 - lstmWeight);
+    
+    let status = "GREEN";
+    const yellowThreshold = Math.max(0.1, threshold - 0.2);
+    if (liveEnsembleProb >= threshold) {
+      status = "RED";
+    } else if (liveEnsembleProb >= yellowThreshold) {
+      status = "YELLOW";
+    }
+    
+    if (status !== prevStatusRef.current) {
+      if (status === "RED") {
+        if (localStorage.getItem("settings_voice_alerts") === "true") {
+          const utterance = new SpeechSynthesisUtterance("Critical Alert. Solar flare peak imminent. Deploying spacecraft safe mode.");
+          window.speechSynthesis?.speak(utterance);
+        }
+        if (localStorage.getItem("settings_siren_sound") === "true") {
+          playAlarmSound(880, 0.5);
+        }
+      } else if (status === "YELLOW") {
+        if (localStorage.getItem("settings_voice_alerts") === "true") {
+          const utterance = new SpeechSynthesisUtterance("Warning. Precursor solar heating detected.");
+          window.speechSynthesis?.speak(utterance);
+        }
+        if (localStorage.getItem("settings_siren_sound") === "true") {
+          playAlarmSound(440, 0.3);
+        }
+      }
+      prevStatusRef.current = status;
+    }
+  }, [realtime, lstmWeight, threshold]);
  
   // Simulation loop trigger
   useEffect(() => {
@@ -93,6 +182,9 @@ export function TelemetryContent() {
       const data = await res.json();
       if (data.weight_lstm !== undefined) {
         setLstmWeight(data.weight_lstm);
+      }
+      if (data.threshold !== undefined) {
+        setThreshold(data.threshold);
       }
     } catch (err) {
       console.error("Failed to fetch model weights", err);
@@ -159,6 +251,10 @@ export function TelemetryContent() {
   const currentLstm = current.lstm_prob !== null ? current.lstm_prob : 0.0;
   const currentPhysics = current.physics_precursor_score !== null ? current.physics_precursor_score : 0.0;
   const liveEnsembleProb = currentLstm * lstmWeight + currentPhysics * (1.0 - lstmWeight);
+  
+  const brightening = current.solexs_brightening !== null && current.solexs_brightening !== undefined ? current.solexs_brightening : 0.0;
+  const hardening = current.spectral_hardening !== null && current.spectral_hardening !== undefined ? current.spectral_hardening : 0.0;
+  const microflare = current.microflare_score !== null && current.microflare_score !== undefined ? current.microflare_score : 0.0;
  
   let warningStatus = "GREEN";
   let warningDesc = "QUIET: Normal solar background activity";
@@ -166,13 +262,14 @@ export function TelemetryContent() {
   let statusColor = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
   let pulseColor = "bg-emerald-500";
  
-  if (liveEnsembleProb >= 0.5) {
+  const yellowThreshold = Math.max(0.1, threshold - 0.2);
+  if (liveEnsembleProb >= threshold) {
     warningStatus = "RED";
     warningDesc = "CRITICAL: Solar Flare Peak Imminent (< 30m)";
     warningAction = "ACTION ADVISE: Spacecraft safe-mode. Close shutter valves, power down high-voltage subsystems, align spacecraft orientation to minimize X-ray flux damage.";
     statusColor = "bg-destructive/10 text-destructive border-destructive/20";
     pulseColor = "bg-destructive";
-  } else if (liveEnsembleProb >= 0.3) {
+  } else if (liveEnsembleProb >= yellowThreshold) {
     warningStatus = "YELLOW";
     warningDesc = "WARNING: Precursor heating/hardening detected";
     warningAction = "ACTION ADVISE: Payload watch state. Deploy high-cadence monitoring. Prepare CDTe detectors for high flux absorption.";
@@ -245,23 +342,49 @@ export function TelemetryContent() {
  
           {/* Date Selector */}
           <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <span className="text-muted-foreground">Active Catalog Date:</span>
-            <select
-              value={selectedDate}
-              onChange={(e) => handleDateChange(e.target.value)}
-              className="bg-muted px-2.5 py-1.5 rounded-lg border border-border text-xs focus:outline-none"
-            >
-              {Object.entries(groupedDates).map(([year, dates]) => (
-                <optgroup key={year} label={year}>
-                  {dates.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+            <span className="text-muted-foreground">Select Simulation Date:</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-lg border border-border bg-muted px-2.5 py-1.5 h-8 font-normal text-xs justify-start gap-2 hover:bg-muted/80 text-foreground"
+                >
+                  {selectedDate || "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate ? parseLocalDate(selectedDate) : undefined}
+                  onSelect={(date) => {
+                    if (date) {
+                      const formatted = getLocalDateString(date);
+                      handleDateChange(formatted);
+                    }
+                  }}
+                  disabled={(date) => {
+                    const minD = new Date("2024-02-01T00:00:00");
+                    const maxD = new Date("2026-06-15T00:00:00");
+                    const compareDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                    const compareMin = new Date(minD.getFullYear(), minD.getMonth(), minD.getDate());
+                    const compareMax = new Date(maxD.getFullYear(), maxD.getMonth(), maxD.getDate());
+                    return compareDate < compareMin || compareDate > compareMax;
+                  }}
+                  modifiers={{
+                    hasFlare: (date) => {
+                      const formatted = getLocalDateString(date);
+                      return flareDatesSet.has(formatted);
+                    }
+                  }}
+                  modifiersClassNames={{
+                    hasFlare: "relative font-semibold text-orange-500 after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:rounded-full after:bg-orange-500"
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </div>
@@ -287,18 +410,72 @@ export function TelemetryContent() {
         </div>
       </div>
  
-      {/* Light Curves Chart Container */}
+      {/* Physics Precursor Breakdown */}
+      <div className="bg-card rounded-2xl p-5 border border-border">
+        <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Activity className="w-4 h-4 text-orange-500" />
+          <span>Physics Precursor Breakdown</span>
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Card 1: Pre-flare Brightening */}
+          <div className="bg-muted/30 rounded-xl p-4 border border-border/50">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-medium text-muted-foreground">Pre-flare Brightening (SoLEXS)</span>
+              <span className="text-xs font-mono font-bold text-foreground">{(brightening * 100).toFixed(0)}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-orange-500 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min(100, Math.max(0, brightening * 100))}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2">Soft X-ray rate-of-change accumulation</p>
+          </div>
+
+          {/* Card 2: Spectral Hardening */}
+          <div className="bg-muted/30 rounded-xl p-4 border border-border/50">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-medium text-muted-foreground">Spectral Hardening (HEL1OS)</span>
+              <span className="text-xs font-mono font-bold text-foreground">{(hardening * 100).toFixed(0)}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-cyan-500 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min(100, Math.max(0, hardening * 100))}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2">Hard-to-Soft X-ray ratio slope</p>
+          </div>
+
+          {/* Card 3: Microflare Activity */}
+          <div className="bg-muted/30 rounded-xl p-4 border border-border/50">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-medium text-muted-foreground">Microflare Activity (HEL1OS)</span>
+              <span className="text-xs font-mono font-bold text-foreground">{(microflare * 100).toFixed(0)}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-amber-500 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min(100, Math.max(0, microflare * 100))}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2">Spike density in low-energy CdTe detector</p>
+          </div>
+        </div>
+      </div>
+ 
+      {/* Real-time Telemetry Observations Chart */}
       <div className="bg-card rounded-2xl p-6 border border-border">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Solar Flare Light Curves</h3>
-            <p className="text-sm text-muted-foreground">Real-time counts/sec (SoLEXS SDD2 & HEL1OS) vs LSTM Forecast Probability</p>
+            <h3 className="text-base font-semibold text-foreground">Instrument Light Curves (Observations)</h3>
+            <p className="text-sm text-muted-foreground">Real-time counts/sec from SoLEXS (Soft X-ray) & HEL1OS (Hard X-ray)</p>
           </div>
           <div className="text-xs font-mono text-muted-foreground">
             Current Date: {realtime.simulationDate || selectedDate} | Step: {realtime.currentIndex || 0}/{realtime.totalIndex || 0}
           </div>
         </div>
-        <div className="h-[360px]">
+        <div className="h-[240px]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData}>
               <defs>
@@ -314,19 +491,9 @@ export function TelemetryContent() {
                 axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
               />
               <YAxis 
-                yAxisId="left"
                 tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
                 axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
                 label={{ value: 'Count Rate (counts/sec)', angle: -90, position: 'insideLeft', offset: 0, fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
-              />
-              <YAxis 
-                yAxisId="right"
-                orientation="right"
-                domain={[0, 100]}
-                tickFormatter={(v) => `${v}%`}
-                tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
-                axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
-                label={{ value: 'Forecast Probability', angle: 90, position: 'insideRight', offset: 0, fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
               />
               <Tooltip 
                 contentStyle={{
@@ -339,7 +506,6 @@ export function TelemetryContent() {
               />
               <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }} />
               <Area
-                yAxisId="left"
                 type="monotone"
                 dataKey="Soft X-ray (SoLEXS)"
                 stroke="#F97316"
@@ -347,20 +513,63 @@ export function TelemetryContent() {
                 fill="url(#solexsGradient)"
               />
               <Line
-                yAxisId="left"
                 type="monotone"
                 dataKey="Hard X-ray (HEL1OS)"
                 stroke="#38bdf8"
                 strokeWidth={1.5}
                 dot={false}
               />
-              <Line
-                yAxisId="right"
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Forecast Probability Chart */}
+      <div className="bg-card rounded-2xl p-6 border border-border">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Flare Forecast Probability</h3>
+            <p className="text-sm text-muted-foreground">Hybrid Ensemble (LSTM + Physics Precursors) probability of flare within 30 minutes</p>
+          </div>
+        </div>
+        <div className="h-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData}>
+              <defs>
+                <linearGradient id="probGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="rgba(255, 107, 0, 0.3)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="rgba(255, 107, 0, 0)" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis 
+                dataKey="time" 
+                tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+                axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
+              />
+              <YAxis 
+                domain={[0, 100]}
+                tickFormatter={(v) => `${v}%`}
+                tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+                axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
+                label={{ value: 'Forecast Probability', angle: -90, position: 'insideLeft', offset: 0, fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: "rgba(10,12,24,0.95)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "12px",
+                  color: "#fff",
+                  fontSize: 12,
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }} />
+              <Area
                 type="monotone"
                 dataKey="Forecast Probability"
                 stroke="#FF6B00"
                 strokeWidth={2.5}
-                dot={false}
+                fill="url(#probGradient)"
               />
             </ComposedChart>
           </ResponsiveContainer>

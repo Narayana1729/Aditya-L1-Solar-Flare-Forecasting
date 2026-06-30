@@ -5,10 +5,26 @@ import { useEffect, useRef } from "react";
 
 const footerLinks = {
   Pipeline: [
-    { name: "Data Ingestion", href: "#features" },
-    { name: "How it works", href: "#how-it-works" },
-    { name: "Instruments", href: "#infra" },
-    { name: "Results", href: "#metrics" },
+    { 
+      name: "Data Ingestion", 
+      href: "/pipeline/data-ingestion", 
+      description: "Ingested 1M+ rows of telemetry, syncing SoLEXS & HEL1OS at 1m cadence." 
+    },
+    { 
+      name: "How it works", 
+      href: "/pipeline/how-it-works", 
+      description: "Ensembled LightGBM, LSTM, and Isolation Forest with a meta-learner." 
+    },
+    { 
+      name: "Instruments", 
+      href: "/pipeline/instruments", 
+      description: "Parsed level-1 & level-2 FITS/CDF datasets from ISRO PRADAN and NOAA." 
+    },
+    { 
+      name: "Results", 
+      href: "/pipeline/results", 
+      description: "Achieved 0.22 TSS (30m) with +12 min warning lead time over baseline." 
+    },
   ],
   Models: [
     { name: "LightGBM", href: "#how-it-works" },
@@ -17,10 +33,10 @@ const footerLinks = {
     { name: "Stacking Ensemble", href: "#how-it-works" },
   ],
   Team: [
-    { name: "Uppena Upagna", href: "#team" },
-    { name: "Polishetty Bhanu Venkata Sai Ram Koushik", href: "#team" },
-    { name: "Ismail Zabiullah", href: "#team" },
-    { name: "Subramhanya Srimannarayana", href: "#team" },
+    { name: "Uppena Upagna", href: "https://github.com/uppenaupagna-debug" },
+    { name: "Polishetty Bhanu Venkata Sai Ram Koushik", href: "https://github.com/koushikpolisetty10" },
+    { name: "Ismail Zabiullah", href: "https://github.com/Quantum-Enigma-dot" },
+    { name: "Subramhanya Srimannarayana", href: "https://github.com/Narayana1729" },
   ],
   Data: [
     { name: "PRADAN Portal", href: "https://pradan.issdc.gov.in/" },
@@ -143,21 +159,33 @@ export function FooterSection() {
               <div key={title}>
                 <h3 className="text-sm font-medium text-white mb-6">{title}</h3>
                 <ul className="space-y-4">
-                  {links.map((link) => (
-                    <li key={link.name}>
-                      <a
-                        href={link.href}
-                        className="text-sm text-white/40 hover:text-white transition-colors inline-flex items-center gap-2"
-                      >
-                        {link.name}
-                        {"badge" in link && link.badge && (
-                          <span className="text-xs px-2 py-0.5 bg-white text-black rounded-full">
-                            {link.badge}
-                          </span>
-                        )}
-                      </a>
-                    </li>
-                  ))}
+                  {links.map((link) => {
+                    const isExternal = link.href.startsWith("http");
+                    return (
+                      <li key={link.name}>
+                        <a
+                          href={link.href}
+                          target={isExternal ? "_blank" : undefined}
+                          rel={isExternal ? "noopener noreferrer" : undefined}
+                          className="group block transition-all"
+                        >
+                          <div className="text-sm text-white/40 group-hover:text-white transition-colors flex items-center gap-2 font-medium">
+                            {link.name}
+                            {"badge" in link && (link as any).badge && (
+                              <span className="text-xs px-2 py-0.5 bg-white text-black rounded-full">
+                                {(link as any).badge}
+                              </span>
+                            )}
+                          </div>
+                          {"description" in link && (link as any).description && (
+                            <p className="text-[11px] text-white/20 group-hover:text-white/40 transition-colors mt-1 font-normal max-w-[200px] leading-snug">
+                              {(link as any).description}
+                            </p>
+                          )}
+                        </a>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}

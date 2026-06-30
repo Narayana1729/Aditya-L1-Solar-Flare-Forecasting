@@ -85,7 +85,24 @@ def main():
         'solexs_flux_accel', 
         'minutes_since_last_flare', 
         'flux_prominence_10m', 
-        'flux_prominence_30m'
+        'flux_prominence_30m',
+        'solexs_fft_dom_freq',
+        'solexs_fft_hl_ratio',
+        'solexs_fft_entropy',
+        'hel1os_fft_dom_freq',
+        'hel1os_fft_hl_ratio',
+        'hel1os_fft_entropy',
+        'solexs_wt_cA4_energy',
+        'solexs_wt_cD4_energy',
+        'solexs_wt_cD3_energy',
+        'solexs_wt_cD2_energy',
+        'solexs_wt_cD1_energy',
+        'hel1os_wt_cA4_energy',
+        'hel1os_wt_cD4_energy',
+        'hel1os_wt_cD3_energy',
+        'hel1os_wt_cD2_energy',
+        'hel1os_wt_cD1_energy',
+        'neupert_phase_lag'
     ]
 
     # Ensure chronological order

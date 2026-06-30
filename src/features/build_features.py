@@ -25,6 +25,13 @@ def main():
     # Normalise flare_class: fill NaNs so downstream str operations are safe
     df['flare_class'] = df['flare_class'].fillna('quiet').astype(str)
     
+    # Drop columns that are mostly NaN (e.g., > 50% missing values) to prevent dropna() from wiping out the dataset
+    nan_threshold = len(df) * 0.5
+    mostly_nan_cols = [col for col in df.columns if df[col].isna().sum() > nan_threshold]
+    if mostly_nan_cols:
+        print(f"\nDropping columns with >50% NaN values: {mostly_nan_cols}")
+        df = df.drop(columns=mostly_nan_cols)
+        
     # Identify numeric columns (excluding flare_class)
     numeric_cols = [
         col for col in df.columns
@@ -60,6 +67,9 @@ def main():
             df[f"{col}_roll_mean_{w}m"] = df[col].rolling(window=w, min_periods=1).mean()
             df[f"{col}_roll_std_{w}m"] = df[col].rolling(window=w, min_periods=1).std().fillna(0.0)
             
+    # Defragment DataFrame to improve operations performance
+    df = df.copy()
+
     # 4. Handle NaNs introduced by shift/lag features.
     #
     # FIX (was bfill): bfill fills early lag-NaN rows with *future* values,

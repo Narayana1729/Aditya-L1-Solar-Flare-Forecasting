@@ -1,151 +1,159 @@
+"""
+backend/main.py  —  Aditya-L1 Solar Flare Forecasting API  v2.0
+================================================================
+Now powered by the Stacking Ensemble (LightGBM + MAPIE) from models/inference.py.
+
+Key changes vs v1.0:
+  • Removed: inline SolarFlareLSTM class, old scaler/lstm_model.pt loading,
+             compute_lstm_probs(), ENABLE_HEAVY_INFERENCE path
+  • Added:   sys.path import of models/inference.py, slim 7-column merge from
+             features_with_precursors.csv at startup, /api/predict, /api/shap
+  • Updated: /api/realtime returns 15m / 30m / 60m predictions + conformal
+             intervals + TSS-optimised alert levels from optimal_thresholds.json
+  • Updated: /api/metrics returns stacking ensemble performance alongside legacy
+"""
+
 import os
+import sys
 import json
 import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
+
 import pandas as pd
 import numpy as np
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
-import torch
-import torch.nn as nn
-import joblib
 from pydantic import BaseModel
 
-# Define the PyTorch LSTM architecture exactly as it was trained
-class SolarFlareLSTM(nn.Module):
-    def __init__(self, input_dim, hidden_dim=64, num_layers=2, dropout=0.2):
-        super(SolarFlareLSTM, self).__init__()
-        self.lstm = nn.LSTM(
-            input_dim,
-            hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0
-        )
-        self.fc = nn.Linear(hidden_dim, 1)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        out = out[:, -1, :]
-        out = self.dropout(out)
-        logits = self.fc(out)
-        return logits.squeeze(-1)
-
-# Resolve base directory relative to this file
+# ── Path setup ─────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Global variables for data caching and ML inference
-dashboard_df = None
-metrics = None
-feature_cols = None
-scaler = None
-model = None
-features_df = None
-timestamp_to_idx = {}
-
-# Thread lock for stream state synchronization
-stream_lock = threading.Lock()
-# Simulated real-time stream state
-stream_index = 0
-stream_date = None  # will be set dynamically on first request
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global dashboard_df, metrics, feature_cols, scaler, model, features_df, timestamp_to_idx
-    
-    # Load metrics
-    metrics_path = BASE_DIR / "data/processed/evaluation_metrics.json"
-    if metrics_path.exists():
-        with open(metrics_path, "r") as f:
-            metrics = json.load(f)
-        print(f"[SUCCESS] Loaded evaluation metrics from {metrics_path}.")
-    else:
-        print(f"[WARNING] Evaluation metrics JSON not found at {metrics_path}.")
-        metrics = {}
-        
-    # Load dashboard data
-    data_path = BASE_DIR / "data/processed/dashboard_data.csv"
-    if data_path.exists():
-        print(f"Loading dashboard data from {data_path}...")
-        df = pd.read_csv(data_path)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df = df.sort_values('timestamp')
-        
-        # Replace NaNs with None/null for JSON compatibility
-        dashboard_df = df.replace({np.nan: None})
-        print(f"[SUCCESS] Loaded {len(dashboard_df)} rows of dashboard data.")
-    else:
-        print(f"[ERROR] dashboard_data.csv not found at {data_path}! Run create_dashboard_data.py first.")
-
-    # Load feature columns list
-    feature_cols_path = BASE_DIR / "data/processed/feature_cols.txt"
-    if feature_cols_path.exists():
-        with open(feature_cols_path, "r") as f:
-            feature_cols = [line.strip() for line in f if line.strip()]
-        print(f"[SUCCESS] Loaded {len(feature_cols)} feature column names from feature_cols.txt.")
-    else:
-        print(f"[ERROR] feature_cols.txt not found at {feature_cols_path}!")
-        feature_cols = []
-
-    # Load scaler
-    scaler_path = BASE_DIR / "data/processed/scaler.pkl"
-    if scaler_path.exists():
-        scaler = joblib.load(scaler_path)
-        print(f"[SUCCESS] Loaded scaler from {scaler_path}.")
-    else:
-        print(f"[ERROR] scaler.pkl not found at {scaler_path}!")
-        scaler = None
-
-    # Load PyTorch LSTM model
-    model_path = BASE_DIR / "data/processed/lstm_model.pt"
-    if model_path.exists() and len(feature_cols) > 0:
-        try:
-            model = SolarFlareLSTM(input_dim=len(feature_cols), hidden_dim=64, num_layers=2)
-            model.load_state_dict(torch.load(model_path, map_location='cpu'))
-            model.eval()
-            print(f"[SUCCESS] Loaded LSTM model checkpoint from {model_path}.")
-        except Exception as e:
-            print(f"[ERROR] Failed to load LSTM model state dict: {e}")
-            model = None
-    else:
-        print(f"[ERROR] Could not load model: path={model_path}, feature_cols={len(feature_cols)}")
-        model = None
-
-    # Load cleaned features to perform on-the-fly lookback inference
-    features_path = BASE_DIR / "data/processed/features_with_precursors.csv"
-    if features_path.exists() and len(feature_cols) > 0:
-        print(f"Loading feature matrix from {features_path} (loading only required columns to save RAM)...")
-        try:
-            features_df = pd.read_csv(features_path, usecols=feature_cols + ['timestamp'])
-            # Drop rows with NaNs in features
-            features_df = features_df.dropna(subset=feature_cols).reset_index(drop=True)
-            features_df['timestamp'] = pd.to_datetime(features_df['timestamp'])
-            
-            # Map timestamps to list index for O(1) alignment lookups
-            timestamp_to_idx = {ts: idx for idx, ts in enumerate(features_df['timestamp'])}
-            print(f"[SUCCESS] Loaded feature matrix with {len(features_df)} rows. Aligned indices.")
-        except Exception as e:
-            print(f"[ERROR] Failed to load features matrix: {e}")
-            features_df = None
-            timestamp_to_idx = {}
-    else:
-        print(f"[ERROR] features_with_precursors.csv not found at {features_path}!")
-        features_df = None
-        timestamp_to_idx = {}
-        
-    yield
-
-app = FastAPI(
-    title="Aditya-L1 Solar Flare Forecasting System API",
-    description="Backend API serving predictions and solar instrument measurements for Aditya-L1 Mission.",
-    version="1.0.0",
-    lifespan=lifespan
+# Make models/ importable so inference.py can resolve its own asset paths
+sys.path.insert(0, str(BASE_DIR / "models"))
+from inference import (          # noqa: E402  (import after sys.path patch)
+    predict_flare_probability,
+    get_feature_importance_for_dashboard,
+    load_assets_lazy,
 )
 
-# Enable CORS for frontend development and tunnels
+# ── Inference feature columns (same 7 used by models/inference.py) ─────────────
+INFERENCE_FEATURE_COLS = [
+    "flux_long_raw",
+    "flux_long_baseline",
+    "flux_long_zscore",
+    "solexs_flux_accel",
+    "minutes_since_last_flare",
+    "flux_prominence_10m",
+    "flux_prominence_30m",
+]
+
+# ── Global state ───────────────────────────────────────────────────────────────
+dashboard_df: pd.DataFrame | None = None   # simulation data + merged features
+ensemble_metrics: dict = {}                # results/ensemble_results.json
+legacy_metrics: dict = {}                  # data/processed/evaluation_metrics.json
+optimal_thresholds: dict = {}              # models/optimal_thresholds.json
+features_available: bool = False           # True once LightGBM feature cols are merged
+
+stream_lock = threading.Lock()
+stream_index: int = 0
+stream_date: str | None = None
+
+
+# ── Lifespan ───────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global dashboard_df, ensemble_metrics, legacy_metrics
+    global optimal_thresholds, features_available
+
+    # 1. Legacy evaluation metrics (kept for backward-compat with old dashboard fields)
+    legacy_path = BASE_DIR / "data/processed/evaluation_metrics.json"
+    if legacy_path.exists():
+        with open(legacy_path) as f:
+            legacy_metrics = json.load(f)
+        print("[SUCCESS] Loaded legacy evaluation_metrics.json.")
+    else:
+        print("[WARNING] legacy evaluation_metrics.json not found — using defaults.")
+
+    # 2. Stacking ensemble performance metrics
+    ensemble_path = BASE_DIR / "results/ensemble_results.json"
+    if ensemble_path.exists():
+        with open(ensemble_path) as f:
+            ensemble_metrics = json.load(f)
+        tss_30 = ensemble_metrics.get("30m", {}).get("tss", 0)
+        tss_60 = ensemble_metrics.get("60m", {}).get("tss", 0)
+        print(f"[SUCCESS] Stacking Ensemble metrics: TSS_30m={tss_30:.3f}, TSS_60m={tss_60:.3f}")
+    else:
+        print("[WARNING] results/ensemble_results.json not found.")
+
+    # 3. Pre-load LightGBM + MAPIE models + TSS-optimised thresholds
+    try:
+        load_assets_lazy()
+        thresh_path = BASE_DIR / "models/optimal_thresholds.json"
+        with open(thresh_path) as f:
+            optimal_thresholds = json.load(f)
+        print("[SUCCESS] LightGBM + MAPIE inference assets loaded.")
+        print(f"          Decision thresholds: 15m={optimal_thresholds.get('15m', '?'):.3f}, "
+              f"30m={optimal_thresholds.get('30m', '?'):.3f}, "
+              f"60m={optimal_thresholds.get('60m', '?'):.3f}")
+    except Exception as e:
+        print(f"[ERROR] Could not load inference assets: {e}")
+
+    # 4. Dashboard simulation CSV
+    data_path = BASE_DIR / "data/processed/dashboard_data.csv"
+    if data_path.exists():
+        print(f"Loading dashboard simulation data from {data_path}...")
+        df = pd.read_csv(data_path)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        dashboard_df = df.replace({np.nan: None})
+        print(f"[SUCCESS] Loaded {len(dashboard_df):,} rows of dashboard simulation data.")
+    else:
+        print(f"[ERROR] dashboard_data.csv not found at {data_path}! "
+              "Run: python src/data/create_dashboard_data.py")
+
+    # 5. Merge the 7 LightGBM feature columns from features_with_precursors.csv
+    #    We read ONLY those 8 columns (7 features + timestamp) so the 4 GB file
+    #    is never fully loaded into RAM (~50–80 MB resident after the merge).
+    features_path = BASE_DIR / "data/processed/features_with_precursors.csv"
+    if features_path.exists() and dashboard_df is not None:
+        print("[INFO] Merging LightGBM feature columns from features_with_precursors.csv "
+              "(reads 8 of ~200 columns, may take ~2 min on first run)…")
+        try:
+            slim_df = pd.read_csv(
+                features_path,
+                usecols=["timestamp"] + INFERENCE_FEATURE_COLS,
+                low_memory=False,
+            )
+            slim_df["timestamp"] = pd.to_datetime(slim_df["timestamp"])
+            dashboard_df = dashboard_df.merge(slim_df, on="timestamp", how="left")
+            dashboard_df = dashboard_df.replace({np.nan: None})
+            features_available = True
+            print(f"[SUCCESS] Merged {len(INFERENCE_FEATURE_COLS)} inference feature columns. "
+                  "Stacking Ensemble will run live per request.")
+        except Exception as e:
+            print(f"[ERROR] Feature merge failed — falling back to pre-computed ensemble_prob: {e}")
+    elif dashboard_df is not None:
+        print("[WARNING] features_with_precursors.csv not found. "
+              "Serving pre-computed ensemble_prob from dashboard_data.csv.")
+
+    yield  # ← app runs here
+
+    # Teardown (nothing to clean up for now)
+
+
+# ── App ────────────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="Aditya-L1 Solar Flare Forecasting API",
+    description=(
+        "Serves predictions from the Stacking Ensemble (LightGBM + MAPIE conformal intervals) "
+        "trained on 1,029,597 minutes of Aditya-L1 SoLEXS + HEL1OS telemetry. "
+        "Best model: Stacking Ensemble 60m — TSS 0.227, HSS 0.174."
+    ),
+    version="2.0.0",
+    lifespan=lifespan,
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -154,315 +162,436 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ── Internal helpers ───────────────────────────────────────────────────────────
+
+def classify_alert(prob: float, horizon: int) -> str:
+    """
+    Map a flare probability to QUIET / WATCH / WARNING using the TSS-optimised
+    thresholds from models/optimal_thresholds.json.
+    Watch threshold = 60 % of warning threshold (symmetric buffer zone).
+    """
+    thresh = optimal_thresholds.get(f"{horizon}m", 0.45)
+    watch_thresh = thresh * 0.6
+    if prob >= thresh:
+        return "WARNING"
+    elif prob >= watch_thresh:
+        return "WATCH"
+    return "QUIET"
+
+
+def run_ensemble_for_row(row_dict: dict) -> dict:
+    """
+    Extract the 7 LightGBM features from a dashboard row dict and run
+    predict_flare_probability() for all three forecast horizons.
+
+    Returns a dict keyed "15m" / "30m" / "60m", each containing:
+        probability, alert_level, confidence_interval, model_used
+    Any horizon whose inference fails returns None.
+    Falls back gracefully (returns all Nones) if any required feature is missing.
+    """
+    predictions: dict = {"15m": None, "30m": None, "60m": None}
+
+    feature_dict: dict = {}
+    for col in INFERENCE_FEATURE_COLS:
+        val = row_dict.get(col)
+        if val is None:
+            return predictions          # Feature unavailable — caller uses fallback
+        feature_dict[col] = float(val)
+
+    for horizon in [15, 30, 60]:
+        try:
+            pred = predict_flare_probability(feature_dict, horizon_minutes=horizon)
+            predictions[f"{horizon}m"] = pred
+        except Exception as exc:
+            print(f"[WARNING] Inference error at {horizon}m: {exc}")
+
+    return predictions
+
+
+def make_warning_status(prob: float, horizon: int = 30) -> tuple[str, str]:
+    """Convert a probability → (UI status string, description)."""
+    level = classify_alert(prob, horizon)
+    descriptions = {
+        "WARNING": f"CRITICAL: Solar Flare Peak Imminent (<{horizon}m)",
+        "WATCH":   "WARNING: Precursor heating/hardening detected",
+        "QUIET":   "QUIET: Normal solar background activity",
+    }
+    ui_colors = {"WARNING": "RED", "WATCH": "YELLOW", "QUIET": "GREEN"}
+    return ui_colors[level], descriptions[level]
+
+
+def annotate_with_ensemble(rec: dict) -> dict:
+    """
+    Runs the stacking ensemble for a single data record dict and injects
+    multi-horizon keys in-place. Returns the mutated dict.
+    Falls back to pre-computed 'ensemble_prob' from the CSV if features are absent.
+    """
+    preds = run_ensemble_for_row(rec)
+
+    for horizon_key in ["15m", "30m", "60m"]:
+        p = preds.get(horizon_key)
+        if p is not None:
+            h = horizon_key[:-1]   # "15", "30", "60"
+            rec[f"prob_{horizon_key}"]        = p["probability"]
+            rec[f"alert_level_{horizon_key}"] = p["alert_level"]
+            rec[f"ci_lower_{horizon_key}"]    = p["confidence_interval"][0]
+            rec[f"ci_upper_{horizon_key}"]    = p["confidence_interval"][1]
+
+    # Keep 'ensemble_prob' pointing at the 30m stacking ensemble for
+    # backward compatibility with existing dashboard consumers
+    if preds["30m"] is not None:
+        rec["ensemble_prob"] = preds["30m"]["probability"]
+
+    return rec
+
+
+# ── Endpoints ──────────────────────────────────────────────────────────────────
+
 @app.get("/api/metrics")
 def get_metrics():
-    return metrics or {}
+    """
+    Returns both the stacking ensemble skill metrics and the legacy LSTM metrics.
+    The dashboard header should display 'best_tss' and 'best_hss'.
+    """
+    return {
+        # ── New: Stacking Ensemble results per horizon ──
+        "stacking_ensemble": ensemble_metrics,
+        "best_model":        "Stacking Ensemble 60m",
+        "best_tss":          ensemble_metrics.get("60m", {}).get("tss", 0.0),
+        "best_hss":          ensemble_metrics.get("60m", {}).get("hss", 0.0),
+        "optimal_thresholds": optimal_thresholds,
+        "features_available": features_available,
+        # ── Legacy fields kept for backward compat ──
+        "legacy":        legacy_metrics,
+        "threshold":     optimal_thresholds.get("30m", 0.31),
+        "weight_lstm":   legacy_metrics.get("weight_lstm", 0.7),
+        "weight_physics": legacy_metrics.get("weight_physics", 0.3),
+    }
+
 
 @app.get("/api/flare-dates")
 def get_flare_dates():
+    """All calendar dates that contain at least one non-quiet flare event."""
     if dashboard_df is None:
         return []
-    
-    # Find dates containing any non-quiet flare activity
-    df_flares = dashboard_df[dashboard_df['flare_class'] != 'quiet']
-    unique_dates = sorted(df_flares['timestamp'].dt.strftime('%Y-%m-%d').unique())
-    return unique_dates
+    df_flares = dashboard_df[dashboard_df["flare_class"] != "quiet"]
+    return sorted(df_flares["timestamp"].dt.strftime("%Y-%m-%d").unique())
+
 
 @app.get("/api/flare-dates-grouped")
 def get_flare_dates_grouped():
-    """Return flare dates grouped by year for easier navigation."""
+    """Flare dates grouped by year — used by the date-picker sidebar."""
     if dashboard_df is None:
         return {}
-    
-    df_flares = dashboard_df[dashboard_df['flare_class'] != 'quiet']
-    dates = sorted(df_flares['timestamp'].dt.strftime('%Y-%m-%d').unique())
-    
-    grouped = {}
+    df_flares = dashboard_df[dashboard_df["flare_class"] != "quiet"]
+    dates = sorted(df_flares["timestamp"].dt.strftime("%Y-%m-%d").unique())
+    grouped: dict = {}
     for d in dates:
-        year = d[:4]
-        grouped.setdefault(year, []).append(d)
-    
+        grouped.setdefault(d[:4], []).append(d)
     return grouped
+
 
 @app.get("/api/data")
 def get_data(date: str = Query(None, description="Date in YYYY-MM-DD format")):
+    """Return all telemetry rows for a given date (or the first flare date)."""
     if dashboard_df is None:
         return []
-        
     if date:
         try:
-            # Filter by date
             target_date = pd.to_datetime(date).date()
-            df_filtered = dashboard_df[dashboard_df['timestamp'].dt.date == target_date]
+            df_filtered = dashboard_df[dashboard_df["timestamp"].dt.date == target_date]
         except Exception:
             return {"error": "Invalid date format. Use YYYY-MM-DD."}
     else:
-        # Default to the first day with flare activity
-        df_flares = dashboard_df[dashboard_df['flare_class'] != 'quiet']
+        df_flares = dashboard_df[dashboard_df["flare_class"] != "quiet"]
         if df_flares.empty:
             return []
-        first_flare_date = df_flares['timestamp'].dt.date.min()
-        target_date = first_flare_date
-        df_filtered = dashboard_df[dashboard_df['timestamp'].dt.date == target_date]
-        
-    # Convert to JSON friendly format
+        target_date = df_flares["timestamp"].dt.date.min()
+        df_filtered = dashboard_df[dashboard_df["timestamp"].dt.date == target_date]
+
     records = []
     for _, row in df_filtered.iterrows():
         rec = row.to_dict()
-        # Convert timestamp to ISO format string
-        rec['timestamp'] = row['timestamp'].isoformat()
+        rec["timestamp"] = row["timestamp"].isoformat()
         records.append(rec)
-        
     return records
 
-def compute_lstm_probs(timestamps):
-    """
-    Given a list of Timestamp objects, compute the corresponding LSTM probability
-    on-the-fly using batched PyTorch inference.
-    """
-    if model is None or scaler is None or features_df is None or len(feature_cols) == 0:
-        print("[WARNING] Fallback to pre-calculated lstm_prob from dashboard_df.")
-        probs = []
-        for ts in timestamps:
-            match = dashboard_df[dashboard_df['timestamp'] == ts]
-            if not match.empty:
-                val = match.iloc[0]['lstm_prob']
-                probs.append(float(val) if val is not None else 0.0)
-            else:
-                probs.append(0.0)
-        return probs
-
-    windows = []
-    for ts in timestamps:
-        feat_idx = timestamp_to_idx.get(ts)
-        if feat_idx is not None and feat_idx >= 30:
-            window = features_df[feature_cols].iloc[feat_idx - 30 : feat_idx].values
-        else:
-            # Fallback padding if we don't have enough lookback
-            start = max(0, feat_idx - 30) if feat_idx is not None else 0
-            end = feat_idx if feat_idx is not None else 0
-            window = features_df[feature_cols].iloc[start:end].values
-            if len(window) < 30:
-                pad_len = 30 - len(window)
-                if len(window) > 0:
-                    pad_row = window[0]
-                else:
-                    pad_row = np.zeros(len(feature_cols))
-                padding = np.tile(pad_row, (pad_len, 1))
-                window = np.vstack([padding, window])
-        windows.append(window)
-
-    batch_size = len(windows)
-    flat_windows = np.vstack(windows)
-    scaled_flat = scaler.transform(flat_windows)
-    scaled_windows = scaled_flat.reshape(batch_size, 30, len(feature_cols))
-
-    input_tensor = torch.tensor(scaled_windows, dtype=torch.float32)
-    with torch.no_grad():
-        logits = model(input_tensor)
-        probs = torch.sigmoid(logits).numpy().tolist()
-        
-    return probs
 
 @app.get("/api/realtime")
 def get_realtime(reset: bool = False):
-    global stream_index, stream_date, dashboard_df
+    """
+    Streaming simulation endpoint.  Advances one minute per call.
+
+    Each response now includes stacking ensemble predictions for all three
+    forecast horizons (15m / 30m / 60m) with 90% MAPIE conformal intervals
+    and TSS-optimised alert levels.
+
+    Falls back to pre-computed 'ensemble_prob' if the 7 LightGBM feature
+    columns were not merged at startup (i.e. features_available == False).
+    """
+    global stream_index, stream_date
+
     if dashboard_df is None:
         return {"error": "No data loaded"}
-        
+
     with stream_lock:
         if reset:
             stream_index = 0
-            
-        # If no simulation date set yet, default to first flare date
+
+        # Default to the first date that has flare activity
         if stream_date is None:
-            df_flares = dashboard_df[dashboard_df['flare_class'] != 'quiet']
-            if not df_flares.empty:
-                stream_date = df_flares['timestamp'].dt.strftime('%Y-%m-%d').min()
-            else:
+            df_flares = dashboard_df[dashboard_df["flare_class"] != "quiet"]
+            if df_flares.empty:
                 return {"error": "No flare data available"}
-        
-        # Filter data for the simulation day
+            stream_date = df_flares["timestamp"].dt.strftime("%Y-%m-%d").min()
+
         target_date = pd.to_datetime(stream_date).date()
-        df_day = dashboard_df[dashboard_df['timestamp'].dt.date == target_date].reset_index(drop=True)
-        
+        df_day = (
+            dashboard_df[dashboard_df["timestamp"].dt.date == target_date]
+            .reset_index(drop=True)
+        )
         if df_day.empty:
             return {"error": f"No data found for simulation date {stream_date}"}
-            
-        # If we reached the end of the day, loop back
+
         if stream_index >= len(df_day):
-            stream_index = 0
-            
-        # Gather previous 30 points (for the sliding lookback)
+            stream_index = 0  # loop the day
+
+        # Sliding 30-point lookback window
         start_slice = max(0, stream_index - 30)
-        history_slice = df_day.iloc[start_slice:stream_index+1]
-        
-        # Compute PyTorch model inference on the fly for all points in this history slice
-        history_timestamps = history_slice['timestamp'].tolist()
-        lstm_probs = compute_lstm_probs(history_timestamps)
-        
+        history_slice = df_day.iloc[start_slice : stream_index + 1]
+
         history_records = []
-        for idx, (_, r) in enumerate(history_slice.iterrows()):
+        for _, r in history_slice.iterrows():
             rec = r.to_dict()
-            rec['timestamp'] = r['timestamp'].isoformat()
-            rec['lstm_prob'] = lstm_probs[idx]
-            
-            # Combine dynamically on backend using baseline or configured weights
-            phys_val = rec.get('physics_precursor_score') or 0.0
-            w_lstm = metrics.get('weight_lstm', 0.7) if metrics else 0.7
-            w_physics = metrics.get('weight_physics', 0.3) if metrics else 0.3
-            rec['ensemble_prob'] = lstm_probs[idx] * w_lstm + phys_val * w_physics
+            rec["timestamp"] = r["timestamp"].isoformat()
+            # ── Stacking Ensemble inference ──────────────────────────────
+            rec = annotate_with_ensemble(rec)
             history_records.append(rec)
-            
-        # Current row is the last element
+
         row = history_records[-1]
-        
-        # Advance index
         stream_index += 1
-        
-        curr_idx = stream_index - 1
-        total_idx = len(df_day)
-        curr_stream_date = stream_date
-        
-    # Calculate warning level based on ensemble probability
-    prob = row['ensemble_prob'] or 0.0
-    threshold = metrics.get('threshold', 0.5) if metrics else 0.5
-    yellow_threshold = max(0.1, threshold - 0.2)
-    if prob >= threshold:
-        status = "RED"
-        desc = "CRITICAL: Solar Flare Peak Imminent (< 30m)"
-    elif prob >= yellow_threshold:
-        status = "YELLOW"
-        desc = "WARNING: Precursor heating/hardening detected"
-    else:
-        status = "GREEN"
-        desc = "QUIET: Normal solar background activity"
-        
+        curr_idx      = stream_index - 1
+        total_idx     = len(df_day)
+        curr_date_out = stream_date
+
+    # Primary alert signal: 30m stacking ensemble (highest TSS for mid-range)
+    primary_prob = float(row.get("ensemble_prob") or row.get("prob_30m") or 0.0)
+    status, desc = make_warning_status(primary_prob, horizon=30)
+
     return {
-        "current": row,
-        "history": history_records,
+        "current":        row,
+        "history":        history_records,
         "warning_status": status,
-        "warning_desc": desc,
-        "currentIndex": curr_idx,
-        "totalIndex": total_idx,
-        "simulationDate": curr_stream_date
+        "warning_desc":   desc,
+        "currentIndex":   curr_idx,
+        "totalIndex":     total_idx,
+        "simulationDate": curr_date_out,
+        # Surface model metadata for the dashboard info panel
+        "model_info": {
+            "primary":          "Stacking Ensemble (LightGBM + MAPIE)",
+            "horizons":         ["15m", "30m", "60m"],
+            "features_live":    features_available,
+            "tss_15m":          ensemble_metrics.get("15m", {}).get("tss", 0.0),
+            "tss_30m":          ensemble_metrics.get("30m", {}).get("tss", 0.0),
+            "tss_60m":          ensemble_metrics.get("60m", {}).get("tss", 0.0),
+        },
     }
 
+
 @app.post("/api/set-simulation-date")
-def set_simulation_date(date: str = Query(..., description="Simulation date in YYYY-MM-DD format")):
-    global stream_index, stream_date, dashboard_df
+def set_simulation_date(
+    date: str = Query(..., description="Simulation date in YYYY-MM-DD format")
+):
+    """Jump the simulation stream to a specific date and reset the playhead."""
+    global stream_index, stream_date
     if dashboard_df is None:
         return {"error": "No data loaded"}
-        
     try:
         target_date = pd.to_datetime(date).date()
-        df_check = dashboard_df[dashboard_df['timestamp'].dt.date == target_date]
+        df_check = dashboard_df[dashboard_df["timestamp"].dt.date == target_date]
         if df_check.empty:
             return {"error": f"No data available for date {date}"}
-        
         with stream_lock:
             stream_date = date
             stream_index = 0
-            
         return {"success": True, "message": f"Simulation date set to {date}"}
     except Exception as e:
         return {"error": f"Error setting simulation date: {e}"}
+
 
 class SettingsUpdate(BaseModel):
     weight_lstm: float
     weight_physics: float
     threshold: float
 
+
 @app.post("/api/update-settings")
 def update_settings(settings: SettingsUpdate):
-    global metrics
+    """Persist user-adjusted ensemble weights and alert threshold to disk."""
+    global legacy_metrics
     metrics_path = BASE_DIR / "data/processed/evaluation_metrics.json"
-    if metrics is None:
-        metrics = {}
-    metrics["weight_lstm"] = settings.weight_lstm
-    metrics["weight_physics"] = settings.weight_physics
-    metrics["threshold"] = settings.threshold
+    legacy_metrics["weight_lstm"]   = settings.weight_lstm
+    legacy_metrics["weight_physics"] = settings.weight_physics
+    legacy_metrics["threshold"]     = settings.threshold
     try:
         with open(metrics_path, "w") as f:
-            json.dump(metrics, f, indent=4)
+            json.dump(legacy_metrics, f, indent=4)
         return {"success": True, "message": "Settings updated successfully"}
     except Exception as e:
         return {"error": f"Failed to save settings: {e}"}
 
+
+# ── NEW: /api/predict ──────────────────────────────────────────────────────────
+
+class PredictRequest(BaseModel):
+    """
+    Input schema for real-time single-row stacking ensemble inference.
+    Accepts internal model column names OR SoLEXS telemetry aliases — the
+    mapping is handled automatically inside models/inference.py.
+    """
+    flux_long_raw:            float   # solexs_sdd2_counts_clean
+    flux_long_baseline:       float   # 30-min rolling baseline
+    flux_long_zscore:         float   # z-score vs baseline
+    solexs_flux_accel:        float   # dFlux/dt (Neupert proxy)
+    minutes_since_last_flare: float   # sympathetic flare recurrence
+    flux_prominence_10m:      float   # 10-min peak-to-baseline ratio
+    flux_prominence_30m:      float   # 30-min peak-to-baseline ratio
+
+
+@app.post("/api/predict")
+def predict_multi_horizon(req: PredictRequest):
+    """
+    Run the Stacking Ensemble (LightGBM) for all three forecast horizons.
+
+    Returns for each horizon:
+      • probability          — flare probability in [0, 1]
+      • alert_level          — QUIET | WATCH | WARNING (TSS-optimised)
+      • confidence_interval  — 90% MAPIE conformal interval [lower, upper]
+      • model_used           — model identifier string
+
+    Example request body:
+    {
+        "flux_long_raw": 1420.5,
+        "flux_long_baseline": 1150.0,
+        "flux_long_zscore": 1.25,
+        "solexs_flux_accel": 12.4,
+        "minutes_since_last_flare": 120.0,
+        "flux_prominence_10m": 270.5,
+        "flux_prominence_30m": 410.2
+    }
+    """
+    feature_dict = {
+        "flux_long_raw":            req.flux_long_raw,
+        "flux_long_baseline":       req.flux_long_baseline,
+        "flux_long_zscore":         req.flux_long_zscore,
+        "solexs_flux_accel":        req.solexs_flux_accel,
+        "minutes_since_last_flare": req.minutes_since_last_flare,
+        "flux_prominence_10m":      req.flux_prominence_10m,
+        "flux_prominence_30m":      req.flux_prominence_30m,
+    }
+
+    results = {}
+    for horizon in [15, 30, 60]:
+        try:
+            pred = predict_flare_probability(feature_dict, horizon_minutes=horizon)
+            # Convert tuple → list for JSON serialisation
+            pred["confidence_interval"] = list(pred["confidence_interval"])
+            results[f"{horizon}m"] = pred
+        except Exception as e:
+            results[f"{horizon}m"] = {"error": str(e)}
+
+    return results
+
+
+# ── NEW: /api/shap ─────────────────────────────────────────────────────────────
+
+@app.get("/api/shap")
+def get_shap_importances():
+    """
+    Returns the top-10 features ranked by mean absolute SHAP value
+    from the LightGBM 60m model.  Used to power the feature importance
+    bar chart widget in the dashboard.
+
+    Response:
+      { "features": [{"feature": "flux_long_raw", "shap_value": 0.756}, ...] }
+    """
+    try:
+        importances = get_feature_importance_for_dashboard()
+        return {"features": importances}
+    except Exception as e:
+        return {"error": str(e), "features": []}
+
+
+# ── Existing: /api/ingestion-status ───────────────────────────────────────────
+
 @app.get("/api/ingestion-status")
 def get_ingestion_status():
+    """Reads ingestion_status.txt written by download_pradan.py."""
     status_path = BASE_DIR / "data/raw/ingestion_status.txt"
     if not status_path.exists():
         return {
-            "scanned": "N/A",
-            "solexs": {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
-            "hel1os": {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
-            "noaa": {"present": False},
-            "extraction": {"newly": 0, "skipped": 0}
+            "scanned":    "N/A",
+            "solexs":     {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
+            "hel1os":     {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
+            "noaa":       {"present": False},
+            "extraction": {"newly": 0, "skipped": 0},
         }
-    
     try:
-        with open(status_path, "r") as f:
+        with open(status_path) as f:
             lines = f.readlines()
     except Exception as e:
         return {"error": f"Failed to read status file: {e}"}
-        
+
     result = {
-        "scanned": "N/A",
-        "solexs": {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
-        "hel1os": {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
-        "noaa": {"present": False},
-        "extraction": {"newly": 0, "skipped": 0}
+        "scanned":    "N/A",
+        "solexs":     {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
+        "hel1os":     {"zips": 0, "files": 0, "range": "N/A", "size": "N/A"},
+        "noaa":       {"present": False},
+        "extraction": {"newly": 0, "skipped": 0},
     }
-    
     current_section = None
+
     for line in lines:
-        line_str = line.strip()
-        if not line_str:
+        s = line.strip()
+        if not s:
             continue
-        if "Scan timestamp:" in line_str:
-            result["scanned"] = line_str.split("Scan timestamp:", 1)[1].strip()
-        elif "SOLEXS INGESTION STATS:" in line_str:
+        if "Scan timestamp:" in s:
+            result["scanned"] = s.split("Scan timestamp:", 1)[1].strip()
+        elif "SOLEXS INGESTION STATS:" in s:
             current_section = "solexs"
-        elif "HEL1OS INGESTION STATS:" in line_str:
+        elif "HEL1OS INGESTION STATS:" in s:
             current_section = "hel1os"
-        elif "NOAA CATALOG STATS:" in line_str:
+        elif "NOAA CATALOG STATS:" in s:
             current_section = "noaa"
-        elif "EXTRACTION OVERVIEW:" in line_str:
+        elif "EXTRACTION OVERVIEW:" in s:
             current_section = "extraction"
-        elif line_str.startswith("- ") and current_section:
-            key_val = line_str[2:].split(":", 1)
-            if len(key_val) == 2:
-                key, val = key_val[0].strip(), key_val[1].strip()
-                if current_section == "solexs":
-                    if "zip" in key.lower():
-                        result["solexs"]["zips"] = int(val.replace(",", "")) if val.replace(",", "").isdigit() else val
-                    elif "data file" in key.lower():
-                        result["solexs"]["files"] = int(val.replace(",", "")) if val.replace(",", "").isdigit() else val
-                    elif "date range" in key.lower():
-                        result["solexs"]["range"] = val
-                    elif "size" in key.lower():
-                        result["solexs"]["size"] = val
-                elif current_section == "hel1os":
-                    if "zip" in key.lower():
-                        result["hel1os"]["zips"] = int(val.replace(",", "")) if val.replace(",", "").isdigit() else val
-                    elif "data file" in key.lower():
-                        result["hel1os"]["files"] = int(val.replace(",", "")) if val.replace(",", "").isdigit() else val
-                    elif "date range" in key.lower():
-                        result["hel1os"]["range"] = val
-                    elif "size" in key.lower():
-                        result["hel1os"]["size"] = val
-                elif current_section == "noaa":
-                    if "present" in key.lower():
-                        result["noaa"]["present"] = (val.lower() == "true")
-                elif current_section == "extraction":
-                    if "newly" in key.lower():
-                        result["extraction"]["newly"] = int(val.replace(",", "")) if val.replace(",", "").isdigit() else val
-                    elif "skipped" in key.lower():
-                        result["extraction"]["skipped"] = int(val.replace(",", "")) if val.replace(",", "").isdigit() else val
-                        
+        elif s.startswith("- ") and current_section:
+            parts = s[2:].split(":", 1)
+            if len(parts) != 2:
+                continue
+            key, val = parts[0].strip().lower(), parts[1].strip()
+            safe_int = lambda v: int(v.replace(",", "")) if v.replace(",", "").isdigit() else v  # noqa
+            if current_section == "solexs":
+                if "zip"       in key: result["solexs"]["zips"]  = safe_int(val)
+                elif "data file" in key: result["solexs"]["files"] = safe_int(val)
+                elif "date range" in key: result["solexs"]["range"] = val
+                elif "size"    in key: result["solexs"]["size"]  = val
+            elif current_section == "hel1os":
+                if "zip"       in key: result["hel1os"]["zips"]  = safe_int(val)
+                elif "data file" in key: result["hel1os"]["files"] = safe_int(val)
+                elif "date range" in key: result["hel1os"]["range"] = val
+                elif "size"    in key: result["hel1os"]["size"]  = val
+            elif current_section == "noaa":
+                if "present"   in key: result["noaa"]["present"] = val.lower() == "true"
+            elif current_section == "extraction":
+                if "newly"     in key: result["extraction"]["newly"]   = safe_int(val)
+                elif "skipped" in key: result["extraction"]["skipped"] = safe_int(val)
+
     return result
 
+
+# ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

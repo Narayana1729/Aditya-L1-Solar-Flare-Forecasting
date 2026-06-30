@@ -110,6 +110,8 @@ function BlurWord({ word, trigger }: { word: string; trigger: number }) {
 export function HeroSection() {
   const [isVisible, setIsVisible] = useState(false);
   const [wordIndex, setWordIndex] = useState(0);
+  const [videoOpacity, setVideoOpacity] = useState(0); // Start at 0 to avoid flashing the video start
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     setIsVisible(true);
@@ -122,19 +124,87 @@ export function HeroSection() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    let rafId: number;
+    let isSeeking = false;
+    let initialSeekDone = false;
+
+    // Set initial start time when metadata is loaded
+    const handleLoadedMetadata = () => {
+      if (!initialSeekDone) {
+        video.currentTime = 23.5;
+      }
+    };
+
+    if (video.readyState >= 1) {
+      video.currentTime = 23.5;
+    } else {
+      video.addEventListener("loadedmetadata", handleLoadedMetadata);
+    }
+
+    const checkTime = () => {
+      if (!video) return;
+      const time = video.currentTime;
+
+      // Start fading out 0.5 seconds before loop point (at 31.0s)
+      if (time >= 31.0 && time < 31.5) {
+        setVideoOpacity(0);
+      }
+      
+      // Loop back if we reach or exceed the limit
+      if (time >= 31.5 && !isSeeking) {
+        isSeeking = true;
+        setVideoOpacity(0);
+        video.currentTime = 23.5;
+        // Call play in case seeking paused it
+        video.play().catch(() => {});
+      }
+
+      rafId = requestAnimationFrame(checkTime);
+    };
+
+    const handleSeeked = () => {
+      isSeeking = false;
+      initialSeekDone = true;
+      // Seek complete, fade back in
+      setVideoOpacity(0.8);
+    };
+
+    video.addEventListener("seeked", handleSeeked);
+    
+    // Start RAF loop
+    rafId = requestAnimationFrame(checkTime);
+
+    // Make sure it starts playing
+    video.play().catch(() => {});
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (video) {
+        video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+        video.removeEventListener("seeked", handleSeeked);
+      }
+    };
+  }, []);
+
   return (
     <section className="relative min-h-screen flex flex-col justify-center items-start overflow-hidden bg-black">
       {/* Background video */}
       <div className="absolute inset-0 z-0">
         <video
+          ref={videoRef}
           autoPlay
           muted
           loop
           playsInline
           aria-hidden="true"
-          className="w-full h-full object-cover object-center opacity-80"
+          className="w-full h-full object-cover object-center transition-opacity duration-500 ease-in-out"
+          style={{ opacity: videoOpacity }}
         >
-          <source src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/bg-hero-0BnFGdr81Ifnj3WbBZoNt1KE4D5DMT.mp4" type="video/mp4" />
+          <source src="/videos/hero.mp4" type="video/mp4" />
         </video>
         {/* Subtle overlay to ensure text readability on the left */}
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-transparent" />

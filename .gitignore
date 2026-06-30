@@ -28,7 +28,10 @@ __pycache__/
 !/goes_data/metrics/
 /features/
 /logs/
-/models/
+/models/*
+!/models/*.py
+!/models/*.json
+!/models/*.md
 /results/
 /scratch/
 **/*.csv

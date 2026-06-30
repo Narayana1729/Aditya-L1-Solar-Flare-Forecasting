@@ -1,6 +1,6 @@
 "use client";
  
-import type { Section } from "@/app/page";
+import type { Section } from "@/app/dashboard/page";
 import { TelemetryContent } from "./content/telemetry-content";
 import { CatalogueContent } from "./content/catalogue-content";
 import { MetricsContent } from "./content/metrics-content";

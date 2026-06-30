@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useTheme } from "next-themes";
+
 const features = [
   {
     number: "E1",
@@ -40,10 +42,15 @@ const features = [
 ];
 
 // Floating dot particles visualization — smooth mouse repulsion
-function ParticleVisualization() {
+function ParticleVisualization({ theme }: { theme: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
   const mouseRef = useRef({ x: -9999, y: -9999 }); // off-screen default
+  const themeRef = useRef(theme);
+
+  useEffect(() => {
+    themeRef.current = theme;
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -105,6 +112,7 @@ function ParticleVisualization() {
 
       const mx = mouseRef.current.x;
       const my = mouseRef.current.y;
+      const isDark = themeRef.current === "dark";
 
       particles.forEach((p) => {
         // Natural floating orbit around base position
@@ -139,7 +147,7 @@ function ParticleVisualization() {
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius + pulse * 0.8, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.fillStyle = isDark ? `rgba(255, 255, 255, ${alpha})` : `rgba(0, 0, 0, ${alpha * 0.65})`;
         ctx.fill();
       });
 
@@ -170,8 +178,11 @@ export function FeaturesSection() {
   const [displayFeature, setDisplayFeature] = useState(0); // which content is rendered (stable during fade)
   const [fading, setFading] = useState(false);
   const sectionRef = useRef<HTMLDivElement>(null);
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) setIsVisible(true);
@@ -197,7 +208,7 @@ export function FeaturesSection() {
     <section
       id="features"
       ref={sectionRef}
-      className="dark relative py-24 lg:py-32 overflow-hidden bg-background text-foreground border-t border-border"
+      className="relative py-24 lg:py-32 overflow-hidden bg-background text-foreground border-t border-border"
     >
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         {/* Header - Full width with diagonal layout */}
@@ -231,7 +242,7 @@ export function FeaturesSection() {
         {/* Bento Grid Layout (Single Large Card) */}
         <div className="grid lg:grid-cols-12 gap-4 lg:gap-6">
           <div 
-            className={`lg:col-span-12 relative bg-card border border-border min-h-[500px] overflow-hidden group transition-all duration-700 flex flex-col lg:flex-row ${
+            className={`dark lg:col-span-12 relative bg-card text-foreground border border-border min-h-[500px] overflow-hidden group transition-all duration-700 flex flex-col lg:flex-row ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
             }`}
           >
@@ -253,7 +264,7 @@ export function FeaturesSection() {
 
             {/* Right: text content + particle canvas */}
             <div className="relative flex-1 p-8 lg:p-12 bg-card flex flex-col justify-between min-h-[450px] lg:min-h-auto">
-              <ParticleVisualization />
+              {mounted && <ParticleVisualization theme="dark" />}
               
               <div className="relative z-10">
                 {/* Switcher Tabs */}

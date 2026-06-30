@@ -36,23 +36,25 @@ class SolarFlareDataset(Dataset):
 
 # Define the PyTorch LSTM architecture exactly as saved in lstm_model.pt
 class SolarFlareLSTM(nn.Module):
-    def __init__(self, input_dim, hidden_dim=64, num_layers=2, dropout=0.2):
+    def __init__(self, input_dim, hidden_dim=128, num_layers=2, dropout=0.3):
         super(SolarFlareLSTM, self).__init__()
         self.lstm = nn.LSTM(
             input_dim,
             hidden_dim,
             num_layers=num_layers,
             batch_first=True,
-            dropout=dropout if num_layers > 1 else 0
+            dropout=dropout
         )
-        self.fc = nn.Linear(hidden_dim, 1)
+        self.batch_norm = nn.BatchNorm1d(hidden_dim)
         self.dropout = nn.Dropout(dropout)
+        self.head = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
         out, _ = self.lstm(x)
-        out = out[:, -1, :]
-        out = self.dropout(out)
-        logits = self.fc(out)
+        last = out[:, -1, :]
+        last = self.batch_norm(last)
+        last = self.dropout(last)
+        logits = self.head(last)
         return logits.squeeze(-1)
 
 
@@ -109,9 +111,12 @@ def main():
     meta_cols = [c for c in meta_cols if c in df.columns]
     df_meta = df[meta_cols].copy()
 
-    # Feature columns (everything except label / meta)
-    exclude_cols = ['timestamp', 'flare_class', 'target', 'is_flare']
-    feature_cols = [c for c in df.columns if c not in exclude_cols]
+    # Feature columns (loaded dynamically from the saved feature list)
+    feature_cols_path = "data/processed/feature_cols.txt"
+    if not os.path.exists(feature_cols_path):
+        raise FileNotFoundError(f"Feature columns file not found at {feature_cols_path}")
+    with open(feature_cols_path, "r") as f:
+        feature_cols = [line.strip() for line in f if line.strip()]
 
     # FIX: Drop NaN rows from df first, then align df_meta by index.
     # Previously nan_mask was applied with a pre-drop boolean array which
@@ -129,7 +134,7 @@ def main():
 
     # ---- 3. Load the trained LSTM ----------------------------------------
     input_dim = len(feature_cols)
-    model = SolarFlareLSTM(input_dim=input_dim, hidden_dim=64, num_layers=2)
+    model = SolarFlareLSTM(input_dim=input_dim, hidden_dim=128, num_layers=2)
     # weights_only=True prevents arbitrary code execution from untrusted .pt files
     try:
         model.load_state_dict(torch.load(model_path, map_location='cpu', weights_only=True))

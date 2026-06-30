@@ -104,8 +104,8 @@ export function TestimonialsSection() {
             <h2 className={`text-4xl lg:text-5xl font-display transition-all duration-1000 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}>
-              Trusted by the
-              <span className="text-background/40"> pipeline.</span>
+              Insights from the
+              <span className="text-background/40"> developers.</span>
             </h2>
           </div>
           

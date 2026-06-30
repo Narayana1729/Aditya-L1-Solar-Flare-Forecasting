@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Menu, X, Sun, Moon } from "lucide-react";
 
 const navLinks = [
-  { name: "Problem",     href: "#features"      },
-  { name: "Pipeline",    href: "#how-it-works"  },
-  { name: "Results",     href: "#metrics"        },
-  { name: "Instruments", href: "#infra"          },
-  { name: "Team",        href: "#team"           },
+  { name: "Instruments", href: "/#infra"          },
+  { name: "Metrics",     href: "/#metrics"        },
+  { name: "Pipeline",    href: "/#how-it-works"  },
+  { name: "Reliability", href: "/#reliability"    },
+  { name: "Team",        href: "/#features"       },
 ];
 
 export function Navigation() {
@@ -50,10 +50,10 @@ export function Navigation() {
           }`}
         >
           {/* Logo */}
-          <a href="#" className="flex items-center gap-2 group">
+          <Link href="/" className="flex items-center gap-2 group">
             <span className={`font-display tracking-tight transition-all duration-500 ${isScrolled ? "text-xl text-foreground" : "text-2xl text-white"}`}>IRIS X</span>
             <span className={`font-mono transition-all duration-500 ${isScrolled ? "text-[10px] mt-0.5 text-muted-foreground" : "text-xs mt-1 text-white/60"}`}>TM</span>
-          </a>
+          </Link>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-12">
@@ -78,18 +78,18 @@ export function Navigation() {
               asChild
               size="sm"
               variant="outline"
-              className={`rounded-full transition-all duration-500 ${isScrolled ? "border-foreground/20 text-foreground/70 hover:text-foreground hover:border-foreground px-4 h-8 text-xs" : "border-white/30 text-white/70 hover:text-white hover:border-white px-6"}`}
+              className={`rounded-full transition-all duration-500 bg-transparent ${isScrolled ? "border-foreground/20 text-foreground/70 hover:text-foreground hover:bg-foreground/5 hover:border-foreground px-4 h-8 text-xs" : "border-white/30 text-white/70 hover:text-white hover:bg-white/10 hover:border-white px-6"}`}
             >
               <Link href="/dashboard">Launch Dashboard</Link>
             </Button>
             <Button
-              href="https://github.com/Narayana1729/Aditya-L1-Solar-Flare-Forecasting"
-              target="_blank"
-              rel="noopener noreferrer"
+              asChild
               size="sm"
               className={`rounded-full transition-all duration-500 ${isScrolled ? "bg-foreground hover:bg-foreground/90 text-background px-4 h-8 text-xs" : "bg-white hover:bg-white/90 text-black px-6"}`}
             >
-              View on GitHub
+              <a href="https://github.com/Narayana1729/Aditya-L1-Solar-Flare-Forecasting" target="_blank" rel="noopener noreferrer">
+                View on GitHub
+              </a>
             </Button>
 
             {/* Desktop Theme Toggle */}
